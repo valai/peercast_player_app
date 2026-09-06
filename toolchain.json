@@ -1,0 +1,10 @@
+{
+  "flutter": "3.47.2",
+  "flutterRevision": "d3b14c876900e553bc736ca19295fc09e3853e8e",
+  "dart": "3.13.2",
+  "java": "Temurin 17.0.20.1+1",
+  "androidCommandLineTools": "19.0",
+  "androidPlatform": "36",
+  "androidNdk": "28.2.13676358",
+  "peerCastYtRevision": "b60f176317406e79a5468ba80da8be1d83bb6126"
+}
