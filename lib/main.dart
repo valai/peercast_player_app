@@ -1,121 +1,248 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'models/channel.dart';
+import 'services/app_settings.dart';
+import 'services/channel_directory.dart';
+import 'screens/settings_screen.dart';
+import 'screens/watch_screen.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (defaultTargetPlatform != TargetPlatform.android) {
+    MediaKit.ensureInitialized();
+  }
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'PeerCast YT (GPL-2.0-or-later)',
+    ], await rootBundle.loadString('assets/licenses/peercast-gpl.txt'));
+    yield LicenseEntryWithLineBreaks([
+      'BoringSSL',
+    ], await rootBundle.loadString('assets/licenses/boringssl.txt'));
+  });
+  final settings = await AppSettings.load();
+  runApp(MyApp(settings: settings));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
+  const MyApp({super.key, required this.settings, this.directory});
+  final AppSettings settings;
+  final ChannelDirectory? directory;
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'PeerCast',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff167f8b)),
+      useMaterial3: true,
+    ),
+    home: ChannelScreen(settings: settings, directory: directory),
+  );
+}
+
+class ChannelScreen extends StatefulWidget {
+  const ChannelScreen({super.key, required this.settings, this.directory});
+  final AppSettings settings;
+  final ChannelDirectory? directory;
+  @override
+  State<ChannelScreen> createState() => _ChannelScreenState();
+}
+
+class _ChannelScreenState extends State<ChannelScreen> {
+  late final directory = widget.directory ?? ChannelDirectory();
+  List<Channel> channels = [];
+  Map<String, String> errors = {};
+  bool loading = false;
+  String search = '';
+  int tab = 0;
+  int generation = 0;
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(changed);
+    refresh();
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  void changed() {
+    if (mounted) setState(() {});
+  }
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
+  Future<void> refresh() async {
+    final request = ++generation;
+    setState(() => loading = true);
+    final result = await directory.refresh(List.of(widget.settings.sources));
+    if (!mounted || request != generation) return;
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      channels = result.channels;
+      errors = result.errors;
+      loading = false;
     });
   }
 
   @override
+  void dispose() {
+    widget.settings.removeListener(changed);
+    directory.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final list = (tab == 2 ? widget.settings.history : channels)
+        .where(
+          (c) =>
+              (tab != 1 || widget.settings.favorites.contains(c.key)) &&
+              '${c.name} ${c.genre} ${c.description} ${c.comment}'
+                  .toLowerCase()
+                  .contains(search.toLowerCase()),
+        )
+        .toList();
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('PeerCast'),
+        actions: [
+          IconButton(
+            tooltip: '更新',
+            onPressed: loading ? null : refresh,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: '設定',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(settings: widget.settings),
+                ),
+              );
+              if (mounted) await refresh();
+            },
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'チャンネル・配信内容を検索',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setState(() => search = v),
             ),
-          ],
-        ),
+          ),
+          if (loading) const LinearProgressIndicator(),
+          if (widget.settings.loadError != null)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(widget.settings.loadError!),
+            ),
+          if (errors.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                errors.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: list.isEmpty ? 1 : list.length,
+                itemBuilder: (context, index) {
+                  if (list.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          loading
+                              ? 'チャンネルを取得しています…'
+                              : widget.settings.sources.isEmpty
+                              ? '設定からYPを追加してください'
+                              : tab == 2
+                              ? '閲覧履歴はありません'
+                              : '該当するチャンネルはありません',
+                        ),
+                      ),
+                    );
+                  }
+                  final c = list[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: ListTile(
+                      title: Text(c.name),
+                      subtitle: Text(
+                        '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'お気に入り',
+                        icon: Icon(
+                          widget.settings.favorites.contains(c.key)
+                              ? Icons.star
+                              : Icons.star_border,
+                        ),
+                        onPressed: () async {
+                          try {
+                            await widget.settings.toggleFavorite(c);
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(content: Text('$e')));
+                            }
+                          }
+                        },
+                      ),
+                      onTap: () async {
+                        try {
+                          await widget.settings.remember(c);
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('履歴を保存できませんでした: $e')),
+                            );
+                          }
+                        }
+                        if (context.mounted) {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => WatchScreen(
+                                channel: c,
+                                settings: widget.settings,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: tab,
+        onDestinationSelected: (v) => setState(() => tab = v),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.live_tv), label: 'チャンネル'),
+          NavigationDestination(icon: Icon(Icons.star_outline), label: 'お気に入り'),
+          NavigationDestination(icon: Icon(Icons.history), label: '閲覧履歴'),
+        ],
       ),
     );
   }

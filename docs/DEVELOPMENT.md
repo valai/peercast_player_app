@@ -35,6 +35,7 @@ Git Bash自体の不具合を確認したわけではありません。
 . .\scripts\dev-env.ps1
 flutter --version
 flutter doctor -v
+.\scripts\prepare-native.ps1
 flutter pub get
 flutter analyze
 flutter test
@@ -66,22 +67,39 @@ Gradle JDKもTemurinのパスに設定します。Android Studio自体の起動�
 
 ## Mac / iOS
 
-MacにもFlutter 3.47.2とXcodeを導入し、このプロジェクトで `flutter pub get`、`flutter doctor -v` を実行します。
+MacにFlutter 3.47.2、Xcode、CMake 3.22以上、CocoaPodsを導入し、`sh scripts/prepare-native.sh`、`flutter pub get`、`flutter doctor -v` を実行します。Xcodeのビルドフェーズがネイティブframeworkを作成・埋め込み・署名します。iOS 15以上が対象です。
 Xcodeで `ios/Runner.xcworkspace` を開き、Signing & Capabilitiesで自分のTeamを選択して接続したiPhoneで実行します。
 WindowsではiOSのビルド・署名・実機検証は行えません。
 
 ## 配布物
 
 `flutter build apk --debug` の出力は `build/app/outputs/flutter-apk/app-debug.apk` です。
-現段階では環境検証用テンプレートのAPKであり、PeerCast機能を持つ完成版ではありません。
+YP一覧・設定・掲示板と直接視聴・リレーを実装した開発版です。最新の検証範囲は [NATIVE_CORE.md](NATIVE_CORE.md) を参照してください。
 
-## 検証結果（2026-09-07）
+## 初期実装時の検証結果（2026-09-07、最新結果はNATIVE_CORE.md）
 
 - Flutter 3.47.2 / Dart 3.13.2: 新しいPowerShellプロセスで起動成功。
 - Temurin JDK: `java -version` 成功。
 - `flutter pub get`: 成功。
 - `flutter analyze`: No issues found。
-- `flutter test`: テンプレートのCounter increments smoke test 1件成功。
+- `flutter test`: YP解析・取得障害・保存・掲示板URL判定・画面操作の13件成功。
 - `flutter build apk --debug`: 成功。
 - 検証したAPK: `build/app/outputs/flutter-apk/app-debug.apk`。
-- PeerCast機能、リレー、掲示板投稿、Android実機、iOSビルド・実機検証は未実施。
+- 動画視聴、リレー、掲示板投稿、Android実機、iOSビルド・実機検証は未実施。
+
+### YP・掲示板実装後の追加確認
+
+- Androidエミュレーター emulator-5554 へAPKを更新インストールして起動成功。
+- Windows側のHTTP取得ではSP・p@のindex.txtがともに200・UTF-8で応答。
+- エミュレーター上では両YPが15秒でタイムアウトし、取得失敗表示を確認。
+  エミュレーターから1.1.1.1へのpingも応答なし。ただしICMP失敗だけで原因は断定できない。
+- アプリ上の実チャンネル表示・掲示板閲覧はこの環境では未確認。
+- 13件の自動テストと静的解析は成功。Android debug APKのビルド成功。
+
+### 直接視聴・リレー実装後（2026-09-08）
+
+- Androidはvideo_player（Media3）、iOSはmedia_kitへローカルFLVを渡します。
+- 複数チャンネルの映像表示、全画面、バックグラウンド停止、端末内の下流転送を確認。
+- 検証用エミュレーターは一時的に `-gpu swiftshader -no-snapshot-load -no-snapshot-save` で起動しています。AVDの保存設定は変更していません。
+- エミュレーターの容量不足時は `flutter build apk --debug --split-per-abi --target-platform android-x64` で生成するapp-x86_64-debug.apkを利用できます。
+- 通常APKの保存コピー: `build/peercast-debug.apk`。最新の検証範囲はNATIVE_CORE.mdを参照。
