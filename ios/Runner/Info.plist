@@ -24,7 +24,9 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>LSRequiresIPhoneOS</key>
+	<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSExceptionDomains</key><dict><key>bayonet.ddo.jp</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>bbs.jpnkn.com</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>jbbs.shitaraba.net</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>jbbs.livedoor.jp</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict></dict></dict>
+<key>NSLocalNetworkUsageDescription</key><string>PeerCastの視聴とリレーでローカルネットワークへ接続します。</string>
+<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

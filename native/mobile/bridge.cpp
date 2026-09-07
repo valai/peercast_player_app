@@ -1,0 +1,218 @@
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <regex>
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <thread>
+#include <vector>
+#include "peercast.h"
+#include "usys.h"
+#include "channel.h"
+#include "servmgr.h"
+#include "stats.h"
+#include "yplist.h"
+#include "json.hpp"
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+#define EXPORT extern "C" __attribute__((visibility("default")))
+namespace {
+std::recursive_mutex apiMutex;
+std::mutex requestMutex;
+std::string activeId, lastError, directory;
+std::atomic<bool> running{false}, relaysAllowed{false};
+class MobileSys final : public USys {
+ public:
+  std::mutex mutex;
+  std::condition_variable changed;
+  int workers = 0;
+  bool startWaitableThread(ThreadInfo* info) override {
+    { std::lock_guard<std::mutex> g(mutex); ++workers; }
+    info->m_active = true;
+    try {
+      info->handle = std::thread([this, info] {
+        try { info->func(info); }
+        catch (const std::exception& e) { LOG_ERROR("Mobile worker: %s", e.what()); }
+        catch (...) { LOG_ERROR("Mobile worker failed"); }
+        { std::lock_guard<std::mutex> g(mutex); --workers; }
+        changed.notify_all();
+      });
+      return true;
+    } catch (...) {
+      std::lock_guard<std::mutex> g(mutex); --workers; info->m_active = false; return false;
+    }
+  }
+  bool startThread(ThreadInfo* info) override {
+    if (!startWaitableThread(info)) return false;
+    info->handle.detach(); return true;
+  }
+  bool waitStopped() {
+    std::unique_lock<std::mutex> g(mutex);
+    return changed.wait_for(g, std::chrono::seconds(12), [this] { return workers == 0; });
+  }
+  std::string getExecutablePath() override { return directory + "/peercast_mobile"; }
+  std::vector<std::string> getAllIPAddresses() override {
+    std::vector<std::string> result;
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) != 0) return result;
+    for (auto i = interfaces; i; i = i->ifa_next) {
+      if (!i->ifa_addr) continue;
+      const int family = i->ifa_addr->sa_family;
+      if (family != AF_INET && family != AF_INET6) continue;
+      char address[NI_MAXHOST];
+      if (getnameinfo(i->ifa_addr, family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6), address, sizeof(address), nullptr, 0, NI_NUMERICHOST) == 0) result.emplace_back(address);
+    }
+    freeifaddrs(interfaces); return result;
+  }
+  void exit() override { running = false; }
+  void executeFile(const char*) override {}
+  void openURL(const char*) {}
+  void callLocalURL(const char*, int) override {}
+};
+class MobileApp final : public PeercastApplication {
+ public:
+  const char* getClientTypeOS() override { return "Mobile"; }
+  const char* getIniFilename() override { return nullptr; }
+  const char* getPath() override { return directory.c_str(); }
+  const char* getSettingsDirPath() override { return directory.c_str(); }
+  const char* getStateDirPath() override { return directory.c_str(); }
+  const char* getCacheDirPath() override { return directory.c_str(); }
+  void printLog(LogBuffer::TYPE type, const char* message) override {
+#ifdef __ANDROID__
+    __android_log_print(type == LogBuffer::T_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "PeerCastCore", "%s", message);
+#endif
+  }
+};
+class MobileInstance final : public PeercastInstance {
+ public:
+  Sys* createSys() override { return new MobileSys(); }
+};
+MobileApp app;
+MobileInstance instance;
+std::shared_ptr<Channel> selected;
+void interruptSocket(const std::shared_ptr<ClientSocket>& socket) {
+  if (socket) ::shutdown(socket->getDescriptor(), SHUT_RDWR);
+}
+int fail(const std::string& message) { lastError = message; return -1; }
+}
+// No management endpoints, arbitrary files, POST, broadcasting or other channels.
+bool mobileRequestAllowed(const char* line, bool local) {
+  std::lock_guard<std::mutex> g(requestMutex);
+  if (!running || activeId.empty()) return false;
+  const std::string request(line);
+  if (request.rfind("pcp", 0) == 0 || request.rfind("GIV", 0) == 0) return true;
+  const auto end = request.find(' ', 4);
+  if (end == std::string::npos || request.rfind("GET ", 0) != 0) return false;
+  const auto path = request.substr(4, end - 4);
+  return (relaysAllowed && path == "/channel/" + activeId) || (local && (path == "/stream/" + activeId || path == "/stream/" + activeId + ".flv"));
+}
+EXPORT const char* pc_error() { return lastError.c_str(); }
+EXPORT int pc_stop() {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  if (!sys) return 0;
+  running = false;
+  { std::lock_guard<std::mutex> g(requestMutex); activeId.clear(); }
+  instance.isQuitting = true;
+  servMgr->serverThread.shutdown(); servMgr->idleThread.shutdown();
+  // Prevent the listener creating a new connection while shutdown is collected.
+  std::vector<std::shared_ptr<Channel>> channels;
+  {
+    std::lock_guard<std::recursive_mutex> g(chanMgr->lock);
+    for (auto c = chanMgr->channel; c; c = c->next) channels.push_back(c);
+  }
+  for (const auto& c : channels) {
+    c->thread.shutdown();
+    std::lock_guard<std::recursive_mutex> g(c->lock);
+    interruptSocket(c->sock); interruptSocket(c->pushSock);
+  }
+  {
+    std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+    servMgr->autoServe = false; servMgr->autoConnect = false;
+    for (auto s = servMgr->servents; s; s = s->next) {
+      s->thread.shutdown();
+      std::lock_guard<std::recursive_mutex> sg(s->lock);
+      interruptSocket(s->sock);
+    }
+  }
+  if (!static_cast<MobileSys*>(sys)->waitStopped()) return fail("Core threads did not stop in time; restart the app");
+  for (auto& c : channels) if (c->thread.handle.joinable()) c->thread.handle.join();
+  selected.reset();
+  // Servents are reused only after all detached workers have returned.
+  for (auto s = servMgr->servents; s; s = s->next) s->abort();
+  chanMgr->clearHitLists();
+  return 0;
+}
+EXPORT int pc_start(const char* path, int port, int relays) {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  try {
+    if (port < 1024 || port > 65535 || relays < 0 || relays > 16) return fail("Invalid port or relay limit");
+    if (sys && pc_stop() != 0) return -1;
+    directory = path;
+    if (!sys) {
+      peercastApp = &app; peercastInst = &instance;
+      sys = instance.createSys(); servMgr = new ServMgr(); chanMgr = new ChanMgr(); g_ypList = new YPList();
+    }
+    instance.isQuitting = false;
+    servMgr->allowServer1 = Servent::ALLOW_NETWORK;
+    servMgr->maxRelays = relays; chanMgr->maxRelaysPerChannel = relays;
+    servMgr->maxDirect = 1; servMgr->maxServIn = 12;
+    servMgr->serverHost.port = port; servMgr->serverHostIPv6.port = port;
+    servMgr->forceNormal = false; servMgr->firewalled = ServMgr::FW_UNKNOWN;
+    servMgr->autoServe = true; servMgr->autoConnect = false;
+    servMgr->rootHost.clear(); servMgr->restartServer = false;
+    stats.clear();
+    relaysAllowed = relays > 0; running = true;
+    if (!servMgr->start()) { pc_stop(); return fail("Cannot start core threads"); }
+    lastError.clear(); return 0;
+  } catch (const std::exception& e) { pc_stop(); return fail(e.what()); }
+    catch (...) { pc_stop(); return fail("Native initialization failed"); }
+}
+EXPORT int pc_connect(const char* id, const char* tracker) {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  try {
+    if (!running || !std::regex_match(id, std::regex("[A-Fa-f0-9]{32}"))) return fail("Invalid channel or inactive engine");
+    if (selected) return fail("Stop the current session before selecting another channel");
+    auto host = Host::fromString(tracker, 7144);
+    if (host.port == 0) return fail("Invalid tracker port");
+    ChanInfo info; info.id.fromStr(id); info.contentType = ChanInfo::T_FLV;
+    chanMgr->addHit(host, info.id, true);
+    { std::lock_guard<std::mutex> g(requestMutex); activeId = info.id.str(); }
+    selected = chanMgr->createRelay(info, true);
+    if (!selected) return fail("Cannot create relay channel");
+    return 0;
+  } catch (const std::exception& e) { return fail(e.what()); }
+    catch (...) { return fail("Native connection failed"); }
+}
+EXPORT int pc_set_relays(int count) {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  if (!running || count < 0 || count > 16) return fail("Invalid relay configuration");
+  std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+  relaysAllowed = count > 0; servMgr->maxRelays = count; chanMgr->maxRelaysPerChannel = count;
+  if (count == 0) for (auto s = servMgr->servents; s; s = s->next) if (s->type == Servent::T_RELAY) { s->thread.shutdown(); interruptSocket(s->sock); }
+  return 0;
+}
+EXPORT const char* pc_snapshot() {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  static std::string output;
+  try {
+    nlohmann::json j = {{"running", running.load()}, {"playing", false}, {"relays", 0}, {"bytesOut", 0}, {"firewall", "unknown"}, {"status", "stopped"}};
+    if (running && servMgr) {
+      {
+      std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+      j["relays"] = servMgr->numStreams(Servent::T_RELAY, true);
+      j["bytesOut"] = stats.getCurrent(Stats::BYTESOUT) - stats.getCurrent(Stats::LOCALBYTESOUT);
+      const auto fw = servMgr->getFirewall(4);
+      j["firewall"] = fw == ServMgr::FW_OFF ? "reachable" : fw == ServMgr::FW_ON ? "blocked" : "unknown";
+      }
+      if (selected) { std::lock_guard<std::recursive_mutex> cg(selected->lock); j["playing"] = selected->isPlaying(); j["status"] = Channel::statusMsgs[selected->status]; }
+    }
+    output = j.dump();
+  } catch (...) { output = "{\"running\":false,\"status\":\"snapshot error\"}"; }
+  return output.c_str();
+}
+
+
+

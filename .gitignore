@@ -50,3 +50,6 @@ app.*.map.json
 # Machine-specific IDE settings and downloaded upstream source.
 /.vscode/settings.json
 /native/peercast-yt/
+
+/native/boringssl/
+/native/build/
