@@ -40,45 +40,49 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     target = BoardResolver.resolve(
       widget.settings.threads[widget.channel.key] ?? widget.channel.contact,
     );
-    if (target != null) {
-      board = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onNavigationRequest: (request) {
-              if (!mounted) return NavigationDecision.prevent;
-              final next = BoardResolver.resolve(request.url);
-              if (next?.isThread == true) {
-                selectThread(next!);
-                return NavigationDecision.prevent;
-              }
-              return webUri(request.url) == null
-                  ? NavigationDecision.prevent
-                  : NavigationDecision.navigate;
-            },
-            onPageStarted: (_) {
-              if (mounted) {
-                setState(() {
-                  loading = true;
-                  boardError = null;
-                });
-              }
-            },
-            onPageFinished: (_) {
-              if (mounted) setState(() => loading = false);
-            },
-            onWebResourceError: (e) {
-              if (mounted && e.isForMainFrame == true) {
-                setState(() {
-                  loading = false;
-                  boardError = '掲示板を読み込めませんでした: ${e.description}';
-                });
-              }
-            },
-          ),
-        )
-        ..loadRequest(target!.isThread ? boardHome(target!) : target!.uri);
+    if (target != null && !target!.isThread) {
+      loadBoard(target!.uri);
     }
+  }
+
+  void loadBoard(Uri uri) {
+    board ??= WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onNavigationRequest: (request) {
+            if (!mounted) return NavigationDecision.prevent;
+            final next = BoardResolver.resolve(request.url);
+            if (next?.isThread == true) {
+              selectThread(next!);
+              return NavigationDecision.prevent;
+            }
+            return webUri(request.url) == null
+                ? NavigationDecision.prevent
+                : NavigationDecision.navigate;
+          },
+          onPageStarted: (_) {
+            if (mounted) {
+              setState(() {
+                loading = true;
+                boardError = null;
+              });
+            }
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => loading = false);
+          },
+          onWebResourceError: (e) {
+            if (mounted && e.isForMainFrame == true) {
+              setState(() {
+                loading = false;
+                boardError = '掲示板を読み込めませんでした: ${e.description}';
+              });
+            }
+          },
+        ),
+      );
+    unawaited(board!.loadRequest(uri));
   }
 
   @override
@@ -238,7 +242,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   setState(
                     () => target = BoardResolver.resolve(home.toString()),
                   );
-                  board?.loadRequest(home);
+                  loadBoard(home);
                 },
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('スレッド一覧'),
