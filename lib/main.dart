@@ -99,6 +99,17 @@ class _ChannelScreenState extends State<ChannelScreen> {
                   .contains(search.toLowerCase()),
         )
         .toList();
+    if (tab != 2) {
+      final originalOrder = {for (var i = 0; i < list.length; i++) list[i]: i};
+      list.sort((a, b) {
+        final aCount = a.listeners < 0 ? -1 : a.listeners;
+        final bCount = b.listeners < 0 ? -1 : b.listeners;
+        final byListeners = bCount.compareTo(aCount);
+        return byListeners != 0
+            ? byListeners
+            : originalOrder[a]!.compareTo(originalOrder[b]!);
+      });
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('PeerCast'),
