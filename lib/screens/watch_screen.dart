@@ -13,6 +13,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../models/channel.dart';
 import '../services/app_settings.dart';
 import '../services/board_resolver.dart';
+import 'thread_view.dart';
 
 class WatchScreen extends StatefulWidget {
   const WatchScreen({super.key, required this.channel, required this.settings});
@@ -44,9 +45,17 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setNavigationDelegate(
           NavigationDelegate(
-            onNavigationRequest: (request) => webUri(request.url) == null
-                ? NavigationDecision.prevent
-                : NavigationDecision.navigate,
+            onNavigationRequest: (request) {
+              if (!mounted) return NavigationDecision.prevent;
+              final next = BoardResolver.resolve(request.url);
+              if (next?.isThread == true) {
+                selectThread(next!);
+                return NavigationDecision.prevent;
+              }
+              return webUri(request.url) == null
+                  ? NavigationDecision.prevent
+                  : NavigationDecision.navigate;
+            },
             onPageStarted: (_) {
               if (mounted) {
                 setState(() {
@@ -66,27 +75,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                 });
               }
             },
-            onUrlChange: (change) async {
-              final next = BoardResolver.resolve(change.url ?? '');
-              if (next == null) return;
-              if (mounted) setState(() => target = next);
-              if (next.isThread) {
-                widget.settings.threads[widget.channel.key] = next.uri
-                    .toString();
-                try {
-                  await widget.settings.save();
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('スレッドの保存に失敗しました: $e')),
-                    );
-                  }
-                }
-              }
-            },
           ),
         )
-        ..loadRequest(target!.uri);
+        ..loadRequest(target!.isThread ? boardHome(target!) : target!.uri);
     }
   }
 
@@ -212,52 +203,106 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       );
     },
   );
-  Widget boardView() => Column(
-    children: [
-      Row(
-        children: [
-          IconButton(
-            tooltip: '戻る',
-            icon: const Icon(Icons.arrow_back),
-            onPressed: board == null
-                ? null
-                : () async {
-                    if (await board!.canGoBack()) await board!.goBack();
-                  },
-          ),
-          Expanded(
-            child: Text(
-              target == null
-                  ? '掲示板未設定'
-                  : '${target!.label} · ${target!.isThread ? "スレッド" : "スレッドを選択してください"}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+  Uri boardHome(BoardTarget value) {
+    final p = value.threadParts;
+    return value.uri.replace(
+      path: value.type == BoardType.shitaraba
+          ? '/${p[2]}/${p[3]}/'
+          : '${value.pathPrefix}/${p[2]}/',
+      query: '',
+      fragment: '',
+    );
+  }
+
+  void selectThread(BoardTarget next) {
+    setState(() => target = next);
+    widget.settings.threads[widget.channel.key] = next.uri.toString();
+    unawaited(
+      widget.settings.save().catchError((Object e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('スレッドの保存に失敗しました: $e')));
+        }
+      }),
+    );
+  }
+
+  Widget boardView() => target?.isThread == true
+      ? Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  final home = boardHome(target!);
+                  setState(
+                    () => target = BoardResolver.resolve(home.toString()),
+                  );
+                  board?.loadRequest(home);
+                },
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('スレッド一覧'),
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: '掲示板トップ',
-            icon: const Icon(Icons.home_outlined),
-            onPressed: webUri(widget.channel.contact) == null || board == null
-                ? null
-                : () => board!.loadRequest(webUri(widget.channel.contact)!),
-          ),
-          IconButton(
-            tooltip: '掲示板を更新',
-            icon: const Icon(Icons.refresh),
-            onPressed: board?.reload,
-          ),
-        ],
-      ),
-      if (loading) const LinearProgressIndicator(),
-      if (boardError != null)
-        Padding(padding: const EdgeInsets.all(8), child: Text(boardError!)),
-      Expanded(
-        child: board == null
-            ? const Center(child: Text('有効なコンタクトURLがありません'))
-            : WebViewWidget(controller: board!),
-      ),
-    ],
-  );
+            Expanded(
+              child: ThreadView(
+                key: ValueKey(target!.uri.toString()),
+                target: target!,
+              ),
+            ),
+          ],
+        )
+      : Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  tooltip: '戻る',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: board == null
+                      ? null
+                      : () async {
+                          if (await board!.canGoBack()) await board!.goBack();
+                        },
+                ),
+                Expanded(
+                  child: Text(
+                    target == null
+                        ? '掲示板未設定'
+                        : '${target!.label} · ${target!.isThread ? "スレッド" : "スレッドを選択してください"}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '掲示板トップ',
+                  icon: const Icon(Icons.home_outlined),
+                  onPressed:
+                      webUri(widget.channel.contact) == null || board == null
+                      ? null
+                      : () =>
+                            board!.loadRequest(webUri(widget.channel.contact)!),
+                ),
+                IconButton(
+                  tooltip: '掲示板を更新',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: board?.reload,
+                ),
+              ],
+            ),
+            if (loading) const LinearProgressIndicator(),
+            if (boardError != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(boardError!),
+              ),
+            Expanded(
+              child: board == null
+                  ? const Center(child: Text('有効なコンタクトURLがありません'))
+                  : WebViewWidget(controller: board!),
+            ),
+          ],
+        );
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !fullscreen,

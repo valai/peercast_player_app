@@ -4,6 +4,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain>bayonet.ddo.jp</domain>
         <domain>bbs.jpnkn.com</domain>
+        <domain>www.dmdbs.net</domain>
         <domain>jbbs.shitaraba.net</domain>
         <domain>jbbs.livedoor.jp</domain>
         <domain>127.0.0.1</domain>
