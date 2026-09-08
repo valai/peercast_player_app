@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:charset_converter/charset_converter.dart';
 import 'package:html_unescape/html_unescape.dart';
@@ -6,12 +7,12 @@ import 'package:http/http.dart' as http;
 
 import 'board_resolver.dart';
 
-String boardText(String value) => HtmlUnescape()
-    .convert(
-      value
-          .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-          .replaceAll(RegExp(r'<[^>]*>'), ''),
-    )
+final _unescape = HtmlUnescape();
+final _breakTag = RegExp(r'<br\s*/?>', caseSensitive: false);
+final _htmlTag = RegExp(r'<[^>]*>');
+
+String boardText(String value) => _unescape
+    .convert(value.replaceAll(_breakTag, '\n').replaceAll(_htmlTag, ''))
     .trim();
 
 class BoardPost {
@@ -29,6 +30,8 @@ class BoardThread {
 class BoardClient {
   BoardClient({http.Client? client}) : client = client ?? http.Client();
   final http.Client client;
+  // Bound the cache to the most recently viewed thread.
+  (Uri, String, BoardThread)? _cached;
   String charset(BoardTarget target) =>
       target.type == BoardType.shitaraba ? 'EUC-JP' : 'Shift_JIS';
   List<String> parts(BoardTarget target) {
@@ -89,7 +92,16 @@ class BoardClient {
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
     }
-    return parse(await decode(response, target), target.type);
+    final text = await decode(response, target);
+    final cached = _cached;
+    if (cached != null && cached.$1 == target.uri && cached.$2 == text) {
+      return cached.$3;
+    }
+    final type = target.type;
+    // Parsing every response and HTML entity must not block video or input.
+    final thread = await Isolate.run(() => parse(text, type));
+    _cached = (target.uri, text, thread);
+    return thread;
   }
 
   Future<void> post(

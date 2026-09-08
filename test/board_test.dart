@@ -167,6 +167,31 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
+  testWidgets('操作すると進行中の自動スクロールを繰り返さない', (tester) async {
+    final client = FakeBoardClient()..count = 500;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final listFinder = find.byType(ListView);
+    final controller = tester.widget<ListView>(listFinder).controller!;
+    final gesture = await tester.startGesture(tester.getCenter(listFinder));
+    await gesture.moveBy(const Offset(0, 80));
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(controller.position.extentAfter, greaterThan(1));
+    final offset = controller.offset;
+    await tester.pump(const Duration(seconds: 2));
+    expect(controller.offset, offset);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
   test('DMDBSの設置パスを保ってDATを取得する', () async {
     final target = BoardResolver.resolve(
       'https://www.dmdbs.net/kizuna/test/read.cgi/sample/123456/l50',
@@ -201,6 +226,30 @@ void main() {
     expect(result.title, '題名');
     expect(result.posts.single.body, '本文\n続き'.replaceAll(r'\n', '\n'));
     client.dispose();
+  });
+  test('同じ応答は再利用し、同じレス数でも本文の変更を反映する', () async {
+    var body = List.generate(
+      1000,
+      (i) => '名前<>sage<>日時<>本文$i<br>&lt;例&gt;<>題名',
+    ).join('\n');
+    final client = BoardClient(
+      client: MockClient(
+        (_) async => http.Response(
+          body,
+          200,
+          headers: {'content-type': 'text/plain; charset=utf-8'},
+        ),
+      ),
+    );
+    addTearDown(client.dispose);
+    final first = await client.fetch(target);
+    expect(first.posts.length, 1000);
+    expect(first.posts.last.body, '本文999\n<例>');
+    expect(identical(await client.fetch(target), first), isTrue);
+    body = body.replaceAll('本文999', '削除済み');
+    final changed = await client.fetch(target);
+    expect(identical(changed, first), isFalse);
+    expect(changed.posts.last.body, '削除済み\n<例>');
   });
   test('DATの改行・HTML・エンティティを解析', () {
     final value = BoardClient.parse(

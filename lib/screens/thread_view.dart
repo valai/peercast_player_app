@@ -237,28 +237,33 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
       Expanded(
         child: thread == null
             ? Center(child: Text(loading ? '読み込み中…' : '更新ボタンで再読み込みできます'))
-            : ListView.builder(
-                controller: scroll,
-                itemCount: thread!.posts.length,
-                itemBuilder: (context, index) {
-                  final post = thread!.posts[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${post.number} · ${post.name} · ${post.date}',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        SelectableText(post.body),
-                      ],
-                    ),
-                  );
-                },
+            : Listener(
+                // Stop pending automatic scroll steps when the reader interacts.
+                onPointerDown: (_) => scrollRequest++,
+                onPointerSignal: (_) => scrollRequest++,
+                child: ListView.builder(
+                  controller: scroll,
+                  itemCount: thread!.posts.length,
+                  itemBuilder: (context, index) {
+                    final post = thread!.posts[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${post.number} · ${post.name} · ${post.date}',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          SelectableText(post.body),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
       ),
       if (composing)
