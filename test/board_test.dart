@@ -120,7 +120,12 @@ void main() {
     await tester.tap(find.byTooltip('書き込み'));
     await tester.pumpAndSettle();
     final fields = find.byType(TextField);
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isTrue,
+    );
     await tester.enterText(fields.at(1), 'test@example.com');
+    await tester.pump();
     await tester.ensureVisible(find.byType(CheckboxListTile));
     await tester.tap(find.byType(CheckboxListTile));
     await tester.pumpAndSettle();
