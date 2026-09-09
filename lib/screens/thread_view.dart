@@ -6,9 +6,10 @@ import '../services/board_client.dart';
 import '../services/board_resolver.dart';
 
 class ThreadView extends StatefulWidget {
-  const ThreadView({super.key, required this.target, this.client});
+  const ThreadView({super.key, required this.target, this.client, this.onBack});
   final BoardTarget target;
   final BoardClient? client;
+  final VoidCallback? onBack;
   @override
   State<ThreadView> createState() => _ThreadViewState();
 }
@@ -202,76 +203,91 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
         : const Color(0xFFF3F3F3),
     child: Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
+        Material(
+          color: Colors.white,
+          shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0))),
+          child: Column(
             children: [
-              Expanded(
-                child: Text(
-                  thread?.title ?? 'スレッド',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                tooltip: '更新',
-                onPressed: loading && !backgroundLoading ? null : reload,
-                icon: const Icon(Icons.refresh),
-              ),
-              TapRegion(
-                groupId: composerGroup,
-                child: IconButton(
-                  tooltip: '書き込み',
-                  onPressed: () {
-                    if (composing) {
-                      closeComposer();
-                    } else {
-                      setState(() => composing = true);
-                    }
-                  },
-                  icon: const Icon(Icons.edit),
-                ),
-              ),
-            ],
-          ),
-        ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              FilterChip(
-                label: const Text('オートスクロール'),
-                selected: autoScroll,
-                onSelected: (v) {
-                  setState(() => autoScroll = v);
-                  if (v) {
-                    toBottom();
-                  } else {
-                    scrollRequest++;
-                  }
-                },
-              ),
-              const SizedBox(width: 8),
-              const Text('自動更新: '),
-              DropdownButton<int>(
-                value: interval,
-                items: [0, 7, 15, 30]
-                    .map(
-                      (v) => DropdownMenuItem(
-                        value: v,
-                        child: Text(v == 0 ? 'OFF' : '$v秒'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    if (widget.onBack != null)
+                      IconButton(
+                        tooltip: 'スレッド一覧に戻る',
+                        onPressed: widget.onBack,
+                        icon: const Icon(Icons.arrow_back),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  setState(() => interval = v!);
-                  schedule();
-                },
+                    Expanded(
+                      child: Text(
+                        thread?.title ?? 'スレッド',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '更新',
+                      onPressed: loading && !backgroundLoading ? null : reload,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                    TapRegion(
+                      groupId: composerGroup,
+                      child: IconButton(
+                        tooltip: '書き込み',
+                        onPressed: () {
+                          if (composing) {
+                            closeComposer();
+                          } else {
+                            setState(() => composing = true);
+                          }
+                        },
+                        icon: const Icon(Icons.edit),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              IconButton(
-                tooltip: '最新レスへ',
-                onPressed: toBottom,
-                icon: const Icon(Icons.vertical_align_bottom),
+              SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    FilterChip(
+                      label: const Text('オートスクロール'),
+                      selected: autoScroll,
+                      onSelected: (v) {
+                        setState(() => autoScroll = v);
+                        if (v) {
+                          toBottom();
+                        } else {
+                          scrollRequest++;
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('自動更新: '),
+                    DropdownButton<int>(
+                      value: interval,
+                      items: [0, 7, 15, 30]
+                          .map(
+                            (v) => DropdownMenuItem(
+                              value: v,
+                              child: Text(v == 0 ? 'OFF' : '$v秒'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        setState(() => interval = v!);
+                        schedule();
+                      },
+                    ),
+                    IconButton(
+                      tooltip: '最新レスへ',
+                      onPressed: toBottom,
+                      icon: const Icon(Icons.vertical_align_bottom),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -288,6 +304,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                       onPointerDown: (_) => scrollRequest++,
                       onPointerSignal: (_) => scrollRequest++,
                       child: ListView.builder(
+                        padding: EdgeInsets.zero,
                         controller: scroll,
                         itemCount: thread!.posts.length,
                         itemBuilder: (context, index) {
@@ -315,7 +332,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                 ),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                                horizontal: 8,
                                 vertical: 8,
                               ),
                               child: Column(
@@ -356,7 +373,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.only(
-                                      left: 16,
+                                      left: 8,
                                       top: 4,
                                     ),
                                     child: SelectableText(post.body),

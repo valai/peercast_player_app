@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:video_player/video_player.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/fullscreen.dart';
 
@@ -19,6 +20,7 @@ import '../services/board_resolver.dart';
 import 'thread_view.dart';
 import 'playback_overlay.dart';
 import 'broadcast_clock.dart';
+import 'viewer_count.dart';
 
 class WatchScreen extends StatefulWidget {
   const WatchScreen({super.key, required this.channel, required this.settings});
@@ -47,6 +49,13 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
     unawaited(playback.start(widget.channel));
     target = BoardResolver.resolve(
       widget.settings.threads[widget.channel.key] ?? widget.channel.contact,
@@ -108,6 +117,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+    );
     if (fullscreen) unawaited(setPlaybackFullscreen(false));
     playback.dispose();
     super.dispose();
@@ -144,11 +156,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   BroadcastClock(channel: widget.channel),
-                  Text(
-                    widget.channel.listeners < 0
-                        ? '視聴者数非公開'
-                        : '視聴者数: ${widget.channel.listeners}人',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ViewerCount(
+                    channel: widget.channel,
+                    settings: widget.settings,
                   ),
                 ],
               ),
@@ -278,29 +288,14 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   }
 
   Widget boardView() => target?.isThread == true
-      ? Column(
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () {
-                  final home = boardHome(target!);
-                  setState(
-                    () => target = BoardResolver.resolve(home.toString()),
-                  );
-                  loadBoard(home);
-                },
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('スレッド一覧'),
-              ),
-            ),
-            Expanded(
-              child: ThreadView(
-                key: ValueKey(target!.uri.toString()),
-                target: target!,
-              ),
-            ),
-          ],
+      ? ThreadView(
+          key: ValueKey(target!.uri.toString()),
+          target: target!,
+          onBack: () {
+            final home = boardHome(target!);
+            setState(() => target = BoardResolver.resolve(home.toString()));
+            loadBoard(home);
+          },
         )
       : Column(
           children: [
@@ -373,7 +368,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                 MediaQuery.orientationOf(context) == Orientation.landscape;
             final width = constraints.maxWidth;
             final height = constraints.maxHeight;
-            final videoWidth = fullscreen || !landscape ? width : width * .5;
+            final videoWidth = fullscreen || !landscape ? width : width * .6;
             final videoHeight = fullscreen || landscape
                 ? height
                 : (width * 9 / 16).clamp(0.0, height * .5);
@@ -389,7 +384,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   child: video(),
                 ),
                 Positioned(
-                  left: landscape ? width * .5 : 0,
+                  left: landscape ? videoWidth : 0,
                   top: landscape ? 0 : videoHeight,
                   right: 0,
                   bottom: 0,

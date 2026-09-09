@@ -11,6 +11,7 @@ import 'screens/watch_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   if (defaultTargetPlatform != TargetPlatform.android) {
     MediaKit.ensureInitialized();
   }
@@ -55,6 +56,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   List<Channel> channels = [];
   Map<String, String> errors = {};
   bool loading = false;
+  final searchFocus = FocusNode();
   String search = '';
   int tab = 0;
   int generation = 0;
@@ -62,6 +64,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   void initState() {
     super.initState();
     widget.settings.addListener(changed);
+    searchFocus.addListener(changed);
     refresh();
   }
 
@@ -84,6 +87,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void dispose() {
     widget.settings.removeListener(changed);
+    searchFocus.dispose();
     directory.dispose();
     super.dispose();
   }
@@ -139,6 +143,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: TextField(
+              focusNode: searchFocus,
               decoration: const InputDecoration(
                 hintText: 'チャンネル・配信内容を検索',
                 prefixIcon: Icon(Icons.search),
@@ -163,85 +168,100 @@ class _ChannelScreenState extends State<ChannelScreen> {
               ),
             ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: refresh,
-              child: ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: list.isEmpty ? 1 : list.length,
-                itemBuilder: (context, index) {
-                  if (list.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          loading
-                              ? 'チャンネルを取得しています…'
-                              : widget.settings.sources.isEmpty
-                              ? '設定からYPを追加してください'
-                              : tab == 2
-                              ? '閲覧履歴はありません'
-                              : '該当するチャンネルはありません',
-                        ),
-                      ),
-                    );
-                  }
-                  final c = list[index];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    child: ListTile(
-                      title: Text(c.name),
-                      subtitle: Text(
-                        '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.broadcastDurationLabel()} · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: IconButton(
-                        tooltip: 'お気に入り',
-                        icon: Icon(
-                          widget.settings.favorites.contains(c.key)
-                              ? Icons.star
-                              : Icons.star_border,
-                        ),
-                        onPressed: () async {
-                          try {
-                            await widget.settings.toggleFavorite(c);
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(content: Text('$e')));
-                            }
-                          }
-                        },
-                      ),
-                      onTap: () async {
-                        try {
-                          await widget.settings.remember(c);
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('履歴を保存できませんでした: $e')),
-                            );
-                          }
-                        }
-                        if (context.mounted) {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => WatchScreen(
-                                channel: c,
-                                settings: widget.settings,
-                              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                RefreshIndicator(
+                  onRefresh: refresh,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: list.isEmpty ? 1 : list.length,
+                    itemBuilder: (context, index) {
+                      if (list.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Center(
+                            child: Text(
+                              loading
+                                  ? 'チャンネルを取得しています…'
+                                  : widget.settings.sources.isEmpty
+                                  ? '設定からYPを追加してください'
+                                  : tab == 2
+                                  ? '閲覧履歴はありません'
+                                  : '該当するチャンネルはありません',
                             ),
-                          );
-                        }
-                      },
+                          ),
+                        );
+                      }
+                      final c = list[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        child: ListTile(
+                          title: Text(c.name),
+                          subtitle: Text(
+                            '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.broadcastDurationLabel()} · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'お気に入り',
+                            icon: Icon(
+                              widget.settings.favorites.contains(c.key)
+                                  ? Icons.star
+                                  : Icons.star_border,
+                            ),
+                            onPressed: () async {
+                              try {
+                                await widget.settings.toggleFavorite(c);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(SnackBar(content: Text('$e')));
+                                }
+                              }
+                            },
+                          ),
+                          onTap: () async {
+                            try {
+                              await widget.settings.remember(c);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('履歴を保存できませんでした: $e')),
+                                );
+                              }
+                            }
+                            if (context.mounted) {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => WatchScreen(
+                                    channel: c,
+                                    settings: widget.settings,
+                                  ),
+                                ),
+                              );
+                              if (mounted) await refresh();
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                if (searchFocus.hasFocus ||
+                    MediaQuery.viewInsetsOf(context).bottom > 0)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => searchFocus.unfocus(),
                     ),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
           ),
         ],

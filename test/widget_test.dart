@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peercast_app/main.dart';
+import 'package:peercast_app/screens/viewer_count.dart';
 import 'package:peercast_app/models/channel.dart';
 import 'package:peercast_app/services/app_settings.dart';
 import 'package:peercast_app/services/board_resolver.dart';
@@ -39,6 +40,42 @@ String row({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('視聴者数を定期更新し非公開への変更も反映する', (tester) async {
+    final settings = await AppSettings.load();
+    var count = 12;
+    var calls = 0;
+    final directory = ChannelDirectory(
+      client: MockClient((_) async {
+        calls++;
+        final fields = row().split('<>');
+        fields[6] = '$count';
+        return http.Response.bytes(utf8.encode(fields.join('<>')), 200);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ViewerCount(
+          channel: Channel.parse(row(), settings.sources.first).single,
+          settings: settings,
+          directory: directory,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('視聴者数: 12人'), findsOneWidget);
+    count = 21;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(find.text('視聴者数: 21人'), findsOneWidget);
+    count = -1;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(find.text('視聴者数非公開'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    final stoppedCalls = calls;
+    await tester.pump(const Duration(seconds: 20));
+    expect(calls, stoppedCalls);
+  });
   test('配信時間の解析・経過・保存互換性', () {
     final c = Channel.parse(row(), YellowPage.defaults.first).single;
     final start = c.broadcastStartedAt!;
@@ -233,6 +270,14 @@ void main() {
     await tester.pumpWidget(MyApp(settings: settings, directory: directory));
     await tester.pumpAndSettle();
     expect(find.text('日本語チャンネル'), findsOneWidget);
+    await tester.showKeyboard(find.byType(TextField));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('日本語チャンネル'));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(settings.history, isEmpty);
+    expect(find.byType(ChannelScreen), findsOneWidget);
+
     await tester.tap(find.widgetWithIcon(IconButton, Icons.star_border));
     await tester.pumpAndSettle();
     expect(settings.favorites.length, 1);
