@@ -15,7 +15,7 @@ class AppSettings extends ChangeNotifier {
   Map<String, String> threads = {};
   bool wifiOnly = true;
   int maxRelays = 1;
-  int port = 7144;
+  int port = 7145;
   String? loadError;
   static Future<AppSettings> load() async {
     final settings = AppSettings(await SharedPreferences.getInstance());
