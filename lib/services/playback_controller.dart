@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/channel.dart';
 import 'app_settings.dart';
 import 'peercast_engine.dart';
+import 'playback_audio_session.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({required this.settings, EngineBackend? engine})
@@ -39,6 +40,7 @@ class PlaybackController extends ChangeNotifier {
   }
   final AppSettings settings;
   final EngineBackend engine;
+  final _audioSession = PlaybackAudioSession();
   final Player? player = Platform.isAndroid
       ? null
       : Player(
@@ -121,6 +123,8 @@ class PlaybackController extends ChangeNotifier {
         if (_disposed || ticket != _generation) return;
         await output.play();
       } else {
+        await _audioSession.activate();
+        if (_disposed || ticket != _generation) return;
         final nativePlayer = player!.platform;
         if (nativePlayer is NativePlayer) {
           await nativePlayer.setProperty('cache-on-disk', 'no');
@@ -190,6 +194,11 @@ class PlaybackController extends ChangeNotifier {
         await player?.stop();
       } catch (_) {
         /* Already disposed. */
+      }
+      try {
+        await _audioSession.deactivate();
+      } catch (e) {
+        if (kDebugMode) debugPrint('Audio session cleanup: $e');
       }
       snapshot = const EngineSnapshot();
       changed();
