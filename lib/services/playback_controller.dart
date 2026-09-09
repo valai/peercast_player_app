@@ -56,6 +56,7 @@ class PlaybackController extends ChangeNotifier {
   EngineSnapshot snapshot = const EngineSnapshot();
   String message = '停止中';
   bool active = false, opening = false, relayEnabled = true;
+  bool simulatorAudioUnavailable = false;
   bool _disposed = false;
   int _generation = 0;
   Timer? timer;
@@ -123,11 +124,17 @@ class PlaybackController extends ChangeNotifier {
         if (_disposed || ticket != _generation) return;
         await output.play();
       } else {
-        await _audioSession.activate();
+        simulatorAudioUnavailable = await _audioSession.activate();
         if (_disposed || ticket != _generation) return;
         final nativePlayer = player!.platform;
         if (nativePlayer is NativePlayer) {
           await nativePlayer.setProperty('cache-on-disk', 'no');
+          if (simulatorAudioUnavailable) {
+            // The bundled simulator libmpv has no audio output driver.
+            // Explicit null output keeps video playing instead of emitting
+            // a fatal-looking audio error. Never mute physical devices.
+            await nativePlayer.setProperty('ao', 'null');
+          }
         }
         if (_disposed || ticket != _generation) return;
         await player!

@@ -211,6 +211,24 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               ),
               if (playback.opening)
                 const Center(child: CircularProgressIndicator()),
+              if (playback.active && playback.simulatorAudioUnavailable)
+                const Positioned(
+                  top: 8,
+                  left: 8,
+                  right: 8,
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.black54,
+                      child: Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Text(
+                          'iOSシミュレーターは音声非対応です（音声は実機で確認してください）',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (!playback.active)
                 Center(
                   child: Padding(

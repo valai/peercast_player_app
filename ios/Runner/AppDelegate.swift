@@ -25,10 +25,16 @@ import UIKit
       do {
         switch call.method {
         case "activate":
+          #if targetEnvironment(simulator)
+          // media_kit_libs_ios_video 1.1.4 ships simulator libmpv with
+          // -Daudiounit=disabled. No AVAudioSession setup can enable it.
+          result(true)
+          #else
           // libmpv needs an active playback session before opening audio output.
           try session.setCategory(.playback, mode: .moviePlayback)
           try session.setActive(true)
-          result(nil)
+          result(false)
+          #endif
         case "deactivate":
           // Dart stops libmpv before releasing the session.
           try session.setActive(false, options: .notifyOthersOnDeactivation)

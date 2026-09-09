@@ -55,8 +55,35 @@ void main() {
   test('other platforms do not call the iOS channel', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     final session = PlaybackAudioSession();
-    await session.activate();
+    expect(await session.activate(), isFalse);
     await session.deactivate();
     expect(calls, isEmpty);
+  });
+
+  test(
+    'simulator requests silent output without acquiring a session',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            return true;
+          });
+      final session = PlaybackAudioSession();
+      expect(await session.activate(), isTrue);
+      await session.deactivate();
+      expect(calls, ['activate']);
+    },
+  );
+
+  test('physical iOS devices keep audio enabled', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          return false;
+        });
+    final session = PlaybackAudioSession();
+    expect(await session.activate(), isFalse);
+    await session.deactivate();
+    expect(calls, ['activate', 'deactivate']);
   });
 }
