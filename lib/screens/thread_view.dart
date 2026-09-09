@@ -294,120 +294,137 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
         ),
         if (loading && !backgroundLoading) const LinearProgressIndicator(),
         Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              thread == null
-                  ? Center(child: Text(loading ? '読み込み中…' : '更新ボタンで再読み込みできます'))
-                  : Listener(
-                      // Stop pending automatic scroll steps when the reader interacts.
-                      onPointerDown: (_) => scrollRequest++,
-                      onPointerSignal: (_) => scrollRequest++,
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        controller: scroll,
-                        itemCount: thread!.posts.length,
-                        itemBuilder: (context, index) {
-                          final post = thread!.posts[index];
-                          final sage = post.mail.trim().toLowerCase() == 'sage';
-                          final nameColor = sage
-                              ? const Color(0xFF800080)
-                              : const Color(0xFF008000);
-                          return ColoredBox(
-                            key: ValueKey(post.number),
-                            color: newPostNumbers.contains(post.number)
-                                ? const Color(0xFFE3F2FD)
-                                : Colors.transparent,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  top: BorderSide(
-                                    color: Theme.of(context).dividerColor
-                                        .withValues(alpha: .12),
+          child: TapRegion(
+            groupId: composerGroup,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: closeComposer,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  thread == null
+                      ? Center(
+                          child: Text(loading ? '読み込み中…' : '更新ボタンで再読み込みできます'),
+                        )
+                      : Listener(
+                          // Stop pending automatic scroll steps when the reader interacts.
+                          onPointerDown: (_) => scrollRequest++,
+                          onPointerSignal: (_) => scrollRequest++,
+                          child: ListView.builder(
+                            padding: EdgeInsets.zero,
+                            controller: scroll,
+                            itemCount: thread!.posts.length,
+                            itemBuilder: (context, index) {
+                              final post = thread!.posts[index];
+                              final sage =
+                                  post.mail.trim().toLowerCase() == 'sage';
+                              final nameColor = sage
+                                  ? const Color(0xFF800080)
+                                  : const Color(0xFF008000);
+                              return ColoredBox(
+                                key: ValueKey(post.number),
+                                color: newPostNumbers.contains(post.number)
+                                    ? const Color(0xFFE3F2FD)
+                                    : Colors.transparent,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      top: BorderSide(
+                                        color: Theme.of(context).dividerColor
+                                            .withValues(alpha: .12),
+                                      ),
+                                      bottom: BorderSide(
+                                        color: Theme.of(context).dividerColor
+                                            .withValues(alpha: .12),
+                                      ),
+                                    ),
                                   ),
-                                  bottom: BorderSide(
-                                    color: Theme.of(context).dividerColor
-                                        .withValues(alpha: .12),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text.rich(
+                                        TextSpan(
+                                          children: [
+                                            TextSpan(
+                                              text: '${post.number}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF0000FF),
+                                                decoration:
+                                                    TextDecoration.underline,
+                                              ),
+                                            ),
+                                            const TextSpan(text: ' : '),
+                                            TextSpan(
+                                              text: post.name,
+                                              style: TextStyle(
+                                                color: nameColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: ' [${sage ? 'sage' : ''}]',
+                                              style: TextStyle(
+                                                color: nameColor,
+                                              ),
+                                            ),
+                                            TextSpan(text: ' ${post.date}'),
+                                          ],
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: const Color(0xFF666666),
+                                            ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 8,
+                                          top: 4,
+                                        ),
+                                        child: SelectableText(
+                                          post.body,
+                                          onTap: closeComposer,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text.rich(
-                                    TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${post.number}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF0000FF),
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                        const TextSpan(text: ' : '),
-                                        TextSpan(
-                                          text: post.name,
-                                          style: TextStyle(
-                                            color: nameColor,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: ' [${sage ? 'sage' : ''}]',
-                                          style: TextStyle(color: nameColor),
-                                        ),
-                                        TextSpan(text: ' ${post.date}'),
-                                      ],
-                                    ),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: const Color(0xFF666666),
-                                        ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 8,
-                                      top: 4,
-                                    ),
-                                    child: SelectableText(post.body),
-                                  ),
-                                ],
-                              ),
+                              );
+                            },
+                          ),
+                        ),
+                  if (error != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 90),
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(error!),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-              if (error != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 90),
-                      child: SingleChildScrollView(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(error!),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
         if (composing)
           Flexible(
+            flex: 3,
             child: TapRegion(
               groupId: composerGroup,
               onTapOutside: (_) => closeComposer(),
@@ -464,6 +481,14 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                         ),
                         TextField(
                           controller: message,
+                          onTapAlwaysCalled: true,
+                          onTap: () {
+                            if (View.of(context).viewInsets.bottom > 0) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) FocusScope.of(context).unfocus();
+                              });
+                            }
+                          },
                           onTapOutside: (_) => FocusScope.of(context).unfocus(),
                           enabled: !sending,
                           minLines: 2,

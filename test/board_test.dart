@@ -155,6 +155,63 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
+  testWidgets('書き込みボタンの表示・レススクロール維持・タップで閉じる', (tester) async {
+    final client = FakeBoardClient()..count = 30;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('書き込み'));
+    await tester.pumpAndSettle();
+    expect(find.text('書き込む').hitTestable(), findsOneWidget);
+    final list = find.byType(ListView);
+    final controller = tester.widget<ListView>(list).controller!;
+    final before = controller.offset;
+    await tester.drag(list, const Offset(0, 100));
+    await tester.pumpAndSettle();
+    expect(controller.offset, lessThan(before));
+    expect(find.byType(TextField), findsNWidgets(3));
+    await tester.tapAt(tester.getTopLeft(list) + const Offset(150, 30));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
+  testWidgets('本文を再タップするとキーボードを閉じて下書きを保持する', (tester) async {
+    final client = FakeBoardClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('書き込み'));
+    await tester.pumpAndSettle();
+    final body = find.byType(TextField).last;
+    await tester.enterText(body, '下書き');
+    tester.view.viewInsets = FakeViewPadding(bottom: 200);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(body);
+    await tester.tap(body);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(tester.widget<TextField>(body).controller!.text, '下書き');
+    expect(find.byType(TextField), findsNWidgets(3));
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    await tester.tap(body);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
   testWidgets('高さが異なる500レスで末尾へスクロールする', (tester) async {
     final client = FakeBoardClient()..count = 500;
     await tester.pumpWidget(
