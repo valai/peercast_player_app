@@ -2,6 +2,18 @@
 
 FlutterによるiOS / Android向けPeerCastクライアント。
 
+### iOSシミュレーターの音声制限
+
+`media_kit_libs_ios_video 1.1.4` に同梱されたlibmpvは、実機用では
+`-Daudiounit=enabled`、シミュレーター用では `-Daudiounit=disabled` で
+ビルドされています。音声セッションを有効化するだけでは、シミュレーターの
+`Could not open/initialize audio device -> no sound.` は解消しません。
+シミュレーターではネイティブ側の `targetEnvironment(simulator)` 判定でのみ
+無音出力を選択し、画面に注意を表示して映像再生を継続します。
+実機では音声を無効化しません。音声の確認は実機で行ってください。
+この判定はSwiftを含むため、変更後はホットリロードだけでなくiOSアプリの
+再ビルド・再インストールが必要です。
+
 ## 現在の状態
 
 YP・掲示板と、PeerCast YTコアによる直接視聴・リレーを実装した開発版です。
