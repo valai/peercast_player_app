@@ -194,7 +194,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
                     child: ListTile(
                       title: Text(c.name),
                       subtitle: Text(
-                        '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
+                        '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.broadcastDurationLabel()} · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),

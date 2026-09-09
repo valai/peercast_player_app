@@ -16,9 +16,15 @@ String boardText(String value) => _unescape
     .trim();
 
 class BoardPost {
-  const BoardPost(this.number, this.name, this.date, this.body);
+  const BoardPost(
+    this.number,
+    this.name,
+    this.date,
+    this.body, {
+    this.mail = '',
+  });
   final int number;
-  final String name, date, body;
+  final String name, date, body, mail;
 }
 
 class BoardThread {
@@ -74,6 +80,7 @@ class BoardClient {
           boardText(f[offset]),
           boardText(f[2 + offset]),
           boardText(f[3 + offset]),
+          mail: boardText(f[1 + offset]),
         ),
       );
     }

@@ -58,6 +58,7 @@ class Channel {
     required this.format,
     required this.bitrate,
     required this.listeners,
+    this.broadcastStartedAt,
   });
   final String id,
       name,
@@ -70,6 +71,28 @@ class Channel {
       comment,
       format;
   final int bitrate, listeners;
+  final DateTime? broadcastStartedAt;
+
+  String broadcastDurationLabel({DateTime? now}) {
+    final start = broadcastStartedAt;
+    if (start == null) return '配信時間: 不明';
+    final seconds = (now ?? DateTime.now()).difference(start).inSeconds;
+    final elapsed = seconds < 0 ? 0 : seconds;
+    return '配信時間: ${elapsed ~/ 3600}:${(elapsed ~/ 60 % 60).toString().padLeft(2, '0')}:${(elapsed % 60).toString().padLeft(2, '0')}';
+  }
+
+  static DateTime? _broadcastStart(String value, DateTime now) {
+    final match = RegExp(r'^(\d+):(\d{2})(?::(\d{2}))?$')
+        .firstMatch(value.trim());
+    if (match == null) return null;
+    final minutes = int.parse(match[2]!);
+    final seconds = int.parse(match[3] ?? '0');
+    if (minutes >= 60 || seconds >= 60) return null;
+    return now.subtract(
+      Duration(hours: int.parse(match[1]!), minutes: minutes, seconds: seconds),
+    );
+  }
+
   String get key => '$sourceId:$id';
   bool get playable =>
       format.toUpperCase() == 'FLV' &&
@@ -88,6 +111,7 @@ class Channel {
     'format': format,
     'bitrate': bitrate,
     'listeners': listeners,
+    'broadcastStartedAt': broadcastStartedAt?.toIso8601String(),
   };
   factory Channel.fromJson(Map<String, dynamic> j) => Channel(
     id: j['id'] as String,
@@ -102,10 +126,14 @@ class Channel {
     format: j['format'] as String,
     bitrate: j['bitrate'] as int,
     listeners: j['listeners'] as int,
+    broadcastStartedAt: DateTime.tryParse(
+      j['broadcastStartedAt'] as String? ?? '',
+    ),
   );
   static List<Channel> parse(String text, YellowPage source) {
     final unescape = HtmlUnescape();
     final result = <Channel>[];
+    final now = DateTime.now();
     final seen = <String>{};
     for (final line in text.replaceFirst('\uFEFF', '').split('\n')) {
       final f = line.trimRight().split('<>');
@@ -129,6 +157,7 @@ class Channel {
           format: f[9],
           bitrate: int.tryParse(f[8]) ?? 0,
           listeners: int.tryParse(f[6]) ?? -1,
+          broadcastStartedAt: _broadcastStart(f[15], now),
         ),
       );
     }

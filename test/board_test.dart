@@ -214,7 +214,6 @@ void main() {
     final bounds = tester.getRect(find.byType(ListView));
     for (var cycle = 0; cycle < 5; cycle++) {
       client.fail = cycle == 3;
-      if (cycle == 4) client.count = 501;
       client.pending = Completer<void>();
       await tester.pump(const Duration(seconds: 7));
       expect(controller.offset, offset);
@@ -230,7 +229,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
-  testWidgets('自動更新中と完了後にバーも読書位置のずれも発生しない', (tester) async {
+  testWidgets('オートスクロールOFFでは新着があっても読書位置を維持する', (tester) async {
     final client = FakeBoardClient()..count = 20;
     await tester.pumpWidget(
       MaterialApp(
@@ -242,6 +241,8 @@ void main() {
     await tester.pumpAndSettle();
     final list = find.byType(ListView);
     final controller = tester.widget<ListView>(list).controller!;
+    await tester.tap(find.text('オートスクロール'));
+    await tester.pumpAndSettle();
     controller.jumpTo(100);
     await tester.pumpAndSettle();
     final before = controller.offset;
@@ -264,6 +265,42 @@ void main() {
     client.dispose();
   });
 
+  for (final interact in [false, true]) {
+    testWidgets('自動更新の新着に追従する（事前操作: $interact）', (tester) async {
+      final client = FakeBoardClient()..count = 500;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(title: const Text('再生画面')),
+            body: ThreadView(target: target, client: client),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      if (interact) {
+        await tester.tap(find.text('再生画面'));
+        await tester.drag(list, const Offset(0, 300));
+        await tester.pumpAndSettle();
+        expect(controller.position.extentAfter, greaterThan(1));
+      }
+      expect(
+        tester.widget<FilterChip>(find.byType(FilterChip)).selected,
+        isTrue,
+      );
+      for (final count in [503, 506]) {
+        client.count = count;
+        await tester.pump(const Duration(seconds: 7));
+        await tester.pumpAndSettle();
+        expect(controller.position.extentAfter, lessThan(1));
+        expect(find.byKey(ValueKey(count)), findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+      }
+      await tester.pumpWidget(const SizedBox());
+      client.dispose();
+    });
+  }
   testWidgets('初回レスは強調せず新着だけ次回自動更新の開始まで薄青にする', (tester) async {
     final client = FakeBoardClient()..count = 2;
     await tester.pumpWidget(
@@ -358,6 +395,8 @@ void main() {
       BoardType.jpnkn,
     );
     expect(value.title, '題名');
+    expect(value.posts.first.mail, 'sage');
+    expect(value.posts.last.mail, '');
     expect(value.posts.first.body, '一行\n二行 <例>');
     expect(value.posts.last.number, 2);
   });
@@ -367,6 +406,8 @@ void main() {
       BoardType.shitaraba,
     );
     expect(value.posts.map((p) => p.number), [1, 3]);
+    expect(value.posts.first.mail, 'sage');
+    expect(value.posts.last.mail, '');
   });
   test('HTMLエラーをレスと扱わない', () {
     expect(

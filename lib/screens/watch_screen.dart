@@ -18,6 +18,7 @@ import '../services/app_settings.dart';
 import '../services/board_resolver.dart';
 import 'thread_view.dart';
 import 'playback_overlay.dart';
+import 'broadcast_clock.dart';
 
 class WatchScreen extends StatefulWidget {
   const WatchScreen({super.key, required this.channel, required this.settings});
@@ -139,11 +140,17 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                widget.channel.listeners < 0
-                    ? '視聴者数非公開'
-                    : '視聴者数: ${widget.channel.listeners}人',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  BroadcastClock(channel: widget.channel),
+                  Text(
+                    widget.channel.listeners < 0
+                        ? '視聴者数非公開'
+                        : '視聴者数: ${widget.channel.listeners}人',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ],
           ),

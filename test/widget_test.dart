@@ -39,6 +39,27 @@ String row({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('配信時間の解析・経過・保存互換性', () {
+    final c = Channel.parse(row(), YellowPage.defaults.first).single;
+    final start = c.broadcastStartedAt!;
+    expect(
+      c.broadcastDurationLabel(
+        now: start.add(const Duration(hours: 25, minutes: 2, seconds: 3)),
+      ),
+      '配信時間: 25:02:03',
+    );
+    expect(DateTime.now().difference(start).inMinutes, 20);
+    expect(Channel.fromJson(c.toJson()).broadcastStartedAt, start);
+    final old = c.toJson()..remove('broadcastStartedAt');
+    expect(Channel.fromJson(old).broadcastDurationLabel(), '配信時間: 不明');
+    expect(
+      Channel.parse(
+        row().replaceFirst('0:20', 'invalid'),
+        YellowPage.defaults.first,
+      ).single.broadcastStartedAt,
+      isNull,
+    );
+  });
   test('初期YPは一度だけ作成し全削除を再起動後も保持する', () async {
     final s = await AppSettings.load();
     expect(s.sources.map((v) => v.name), ['SP', 'p@']);
