@@ -24,12 +24,14 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
   Timer? timer;
   BoardThread? thread;
   String? error;
+  Set<int> newPostNumbers = {};
+  bool backgroundLoading = false;
   bool loading = false,
       sending = false,
       autoScroll = true,
       foreground = true,
       composing = false;
-  int interval = 30;
+  int interval = 7;
   @override
   void initState() {
     super.initState();
@@ -42,7 +44,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
     timer?.cancel();
     if (interval > 0 && foreground) {
       timer = Timer.periodic(Duration(seconds: interval), (_) {
-        if (!sending) unawaited(reload());
+        if (!sending) unawaited(reload(automatic: true));
       });
     }
   }
@@ -75,24 +77,74 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  Future<void> reload() async {
+  Future<void> reload({bool automatic = false}) async {
     if (loading) return;
-    setState(() {
-      loading = true;
-      error = null;
-    });
+    final previous = thread;
+    final previousNumbers = previous?.posts.map((post) => post.number).toSet();
+
+    final request = scrollRequest;
+    loading = true;
+    backgroundLoading = automatic;
+    if (!automatic || newPostNumbers.isNotEmpty || error != null) {
+      setState(() {
+        if (automatic) newPostNumbers = {};
+        error = null;
+      });
+    }
     try {
       final next = await client.fetch(widget.target);
       if (!mounted) return;
-      final changed =
-          thread == null || thread!.posts.last.number != next.posts.last.number;
-      setState(() => thread = next);
-      if (autoScroll && changed && foreground) toBottom();
+      final added = previousNumbers == null
+          ? <int>{}
+          : next.posts
+                .where((post) => !previousNumbers.contains(post.number))
+                .map((post) => post.number)
+                .toSet();
+      if (!_sameThread(previous, next)) {
+        setState(() {
+          thread = next;
+          newPostNumbers = {...newPostNumbers, ...added};
+        });
+      }
+      // Background polling must never move the reader, including at the end.
+      if (!automatic &&
+          autoScroll &&
+          (previous == null || added.isNotEmpty) &&
+          foreground &&
+          request == scrollRequest) {
+        toBottom();
+      }
     } catch (e) {
       if (mounted) setState(() => error = '更新失敗: $e');
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        if (automatic) {
+          loading = false;
+        } else {
+          setState(() => loading = false);
+        }
+      }
     }
+  }
+
+  bool _sameThread(BoardThread? previous, BoardThread next) {
+    if (identical(previous, next)) return true;
+    if (previous == null ||
+        previous.title != next.title ||
+        previous.posts.length != next.posts.length) {
+      return false;
+    }
+    for (var i = 0; i < next.posts.length; i++) {
+      final a = previous.posts[i];
+      final b = next.posts[i];
+      if (a.number != b.number ||
+          a.name != b.name ||
+          a.date != b.date ||
+          a.body != b.body) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void closeComposer() {
@@ -159,7 +211,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
             ),
             IconButton(
               tooltip: '更新',
-              onPressed: loading ? null : reload,
+              onPressed: loading && !backgroundLoading ? null : reload,
               icon: const Icon(Icons.refresh),
             ),
             TapRegion(
@@ -199,7 +251,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
             const Text('自動更新: '),
             DropdownButton<int>(
               value: interval,
-              items: [0, 15, 30, 60, 120]
+              items: [0, 7, 15, 30]
                   .map(
                     (v) => DropdownMenuItem(
                       value: v,
@@ -220,51 +272,67 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
           ],
         ),
       ),
-      if (loading) const LinearProgressIndicator(),
-      if (error != null)
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 90),
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          ),
-        ),
+      if (loading && !backgroundLoading) const LinearProgressIndicator(),
       Expanded(
-        child: thread == null
-            ? Center(child: Text(loading ? '読み込み中…' : '更新ボタンで再読み込みできます'))
-            : Listener(
-                // Stop pending automatic scroll steps when the reader interacts.
-                onPointerDown: (_) => scrollRequest++,
-                onPointerSignal: (_) => scrollRequest++,
-                child: ListView.builder(
-                  controller: scroll,
-                  itemCount: thread!.posts.length,
-                  itemBuilder: (context, index) {
-                    final post = thread!.posts[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${post.number} · ${post.name} · ${post.date}',
-                            style: Theme.of(context).textTheme.labelSmall,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            thread == null
+                ? Center(child: Text(loading ? '読み込み中…' : '更新ボタンで再読み込みできます'))
+                : Listener(
+                    // Stop pending automatic scroll steps when the reader interacts.
+                    onPointerDown: (_) => scrollRequest++,
+                    onPointerSignal: (_) => scrollRequest++,
+                    child: ListView.builder(
+                      controller: scroll,
+                      itemCount: thread!.posts.length,
+                      itemBuilder: (context, index) {
+                        final post = thread!.posts[index];
+                        return ColoredBox(
+                          key: ValueKey(post.number),
+                          color: newPostNumbers.contains(post.number)
+                              ? const Color(0xFFE3F2FD)
+                              : Colors.transparent,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${post.number} · ${post.name} · ${post.date}',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                                SelectableText(post.body),
+                              ],
+                            ),
                           ),
-                          SelectableText(post.body),
-                        ],
+                        );
+                      },
+                    ),
+                  ),
+            if (error != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: Material(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 90),
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(error!),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
+          ],
+        ),
       ),
       if (composing)
         Flexible(

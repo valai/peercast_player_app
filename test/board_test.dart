@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -14,9 +15,11 @@ class FakeBoardClient extends BoardClient {
   int calls = 0;
   bool fail = false;
   int count = 1;
+  Completer<void>? pending;
   @override
   Future<BoardThread> fetch(BoardTarget target) async {
     calls++;
+    await pending?.future;
     if (fail) throw Exception('offline');
     return BoardThread(
       'テストスレッド',
@@ -192,6 +195,104 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
+  testWidgets('長いスレッドの末尾で自動更新の各フレームに位置がずれない', (tester) async {
+    final client = FakeBoardClient()..count = 500;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final controller = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!;
+    final offset = controller.offset;
+    final last = find.byKey(const ValueKey(500));
+    final y = tester.getTopLeft(last).dy;
+    final bounds = tester.getRect(find.byType(ListView));
+    for (var cycle = 0; cycle < 5; cycle++) {
+      client.fail = cycle == 3;
+      if (cycle == 4) client.count = 501;
+      client.pending = Completer<void>();
+      await tester.pump(const Duration(seconds: 7));
+      expect(controller.offset, offset);
+      expect(tester.getTopLeft(last).dy, y);
+      client.pending!.complete();
+      for (var frame = 0; frame < 20; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(controller.offset, offset);
+        expect(tester.getTopLeft(last).dy, y);
+        expect(tester.getRect(find.byType(ListView)), bounds);
+      }
+    }
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
+  testWidgets('自動更新中と完了後にバーも読書位置のずれも発生しない', (tester) async {
+    final client = FakeBoardClient()..count = 20;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final list = find.byType(ListView);
+    final controller = tester.widget<ListView>(list).controller!;
+    controller.jumpTo(100);
+    await tester.pumpAndSettle();
+    final before = controller.offset;
+    final bounds = tester.getRect(list);
+    client.pending = Completer<void>();
+    await tester.pump(const Duration(seconds: 7));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(tester.getRect(list), bounds);
+    expect(controller.offset, before);
+    client.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(controller.offset, before);
+    expect(tester.getRect(list), bounds);
+    client.pending = null;
+    client.count = 21;
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(controller.offset, before);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
+
+  testWidgets('初回レスは強調せず新着だけ次回自動更新の開始まで薄青にする', (tester) async {
+    final client = FakeBoardClient()..count = 2;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Color background(int number) =>
+        tester.widget<ColoredBox>(find.byKey(ValueKey(number))).color;
+    expect(background(1), Colors.transparent);
+    expect(background(2), Colors.transparent);
+    client.count = 3;
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(background(2), Colors.transparent);
+    expect(background(3), const Color(0xFFE3F2FD));
+    client.pending = Completer<void>();
+    await tester.pump(const Duration(seconds: 7));
+    expect(background(3), Colors.transparent);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    client.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(background(3), Colors.transparent);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
   test('DMDBSの設置パスを保ってDATを取得する', () async {
     final target = BoardResolver.resolve(
       'https://www.dmdbs.net/kizuna/test/read.cgi/sample/123456/l50',
@@ -295,7 +396,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('本文'), findsOneWidget);
     expect(client.calls, 1);
-    await tester.pump(const Duration(seconds: 30));
+    final interval = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>),
+    );
+    expect(interval.value, 7);
+    expect(interval.items!.map((item) => item.value), [0, 7, 15, 30]);
+    await tester.pump(const Duration(seconds: 6));
+    expect(client.calls, 1);
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
     expect(client.calls, 2);
     await tester.tap(find.byType(DropdownButton<int>));
