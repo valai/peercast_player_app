@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:video_player/video_player.dart';
 
 import 'package:flutter/material.dart';
+
+import '../services/fullscreen.dart';
+
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../services/playback_controller.dart';
@@ -14,6 +17,7 @@ import '../models/channel.dart';
 import '../services/app_settings.dart';
 import '../services/board_resolver.dart';
 import 'thread_view.dart';
+import 'playback_overlay.dart';
 
 class WatchScreen extends StatefulWidget {
   const WatchScreen({super.key, required this.channel, required this.settings});
@@ -32,6 +36,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   String? boardError;
   bool loading = false;
   bool fullscreen = false;
+
+  void setFullscreen(bool enabled) {
+    setState(() => fullscreen = enabled);
+    unawaited(setPlaybackFullscreen(enabled));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -97,6 +107,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (fullscreen) unawaited(setPlaybackFullscreen(false));
     playback.dispose();
     super.dispose();
   }
@@ -111,98 +122,108 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       };
       return ColoredBox(
         color: Colors.black,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Platform.isAndroid
-                  ? (playback.androidVideo?.value.isInitialized == true
-                        ? Center(
-                            child: AspectRatio(
-                              aspectRatio:
-                                  playback.androidVideo!.value.aspectRatio,
-                              child: VideoPlayer(playback.androidVideo!),
-                            ),
-                          )
-                        : const SizedBox.shrink())
-                  : Video(
-                      controller: playback.video,
-                      controls: NoVideoControls,
+        child: PlaybackOverlay(
+          top: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  [
+                    widget.channel.genre,
+                    widget.channel.description,
+                    widget.channel.comment,
+                  ].where((value) => value.isNotEmpty).join(' / '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                widget.channel.listeners < 0
+                    ? '視聴者数非公開'
+                    : '視聴者数: ${widget.channel.listeners}人',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+          bottom: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (playback.active)
+                Text(
+                  '${playback.snapshot.relays}接続 · 外部送信 ${(playback.snapshot.bytesOut / 1048576).toStringAsFixed(1)} MB · $reachability',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: playback.active ? '視聴を停止' : '視聴を開始',
+                    color: Colors.white,
+                    icon: Icon(playback.active ? Icons.stop : Icons.play_arrow),
+                    onPressed: () => playback.active
+                        ? playback.stop()
+                        : playback.start(widget.channel),
+                  ),
+                  TextButton(
+                    onPressed:
+                        !playback.active || widget.settings.maxRelays == 0
+                        ? null
+                        : playback.toggleRelay,
+                    child: Text(
+                      playback.relayEnabled && playback.active
+                          ? 'リレー停止'
+                          : 'リレー開始',
                     ),
-            ),
-            if (playback.opening)
-              const Center(child: CircularProgressIndicator()),
-            if (!playback.active)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    playback.message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: fullscreen ? '全画面を終了' : '全画面',
+                    color: Colors.white,
+                    icon: Icon(
+                      fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    ),
+                    onPressed: () => setFullscreen(!fullscreen),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Platform.isAndroid
+                    ? (playback.androidVideo?.value.isInitialized == true
+                          ? Center(
+                              child: AspectRatio(
+                                aspectRatio:
+                                    playback.androidVideo!.value.aspectRatio,
+                                child: VideoPlayer(playback.androidVideo!),
+                              ),
+                            )
+                          : const SizedBox.shrink())
+                    : Video(
+                        controller: playback.video,
+                        controls: NoVideoControls,
+                      ),
+              ),
+              if (playback.opening)
+                const Center(child: CircularProgressIndicator()),
+              if (!playback.active)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      playback.message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
                 ),
-              ),
-            Positioned(
-              left: 4,
-              right: 4,
-              bottom: 0,
-              child: ColoredBox(
-                color: Colors.black54,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (playback.active)
-                      Text(
-                        '${playback.snapshot.relays}接続 · 外部送信 ${(playback.snapshot.bytesOut / 1048576).toStringAsFixed(1)} MB · $reachability',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                      ),
-                    Row(
-                      children: [
-                        IconButton(
-                          tooltip: playback.active ? '視聴を停止' : '視聴を開始',
-                          color: Colors.white,
-                          icon: Icon(
-                            playback.active ? Icons.stop : Icons.play_arrow,
-                          ),
-                          onPressed: () => playback.active
-                              ? playback.stop()
-                              : playback.start(widget.channel),
-                        ),
-                        TextButton(
-                          onPressed:
-                              !playback.active || widget.settings.maxRelays == 0
-                              ? null
-                              : playback.toggleRelay,
-                          child: Text(
-                            playback.relayEnabled && playback.active
-                                ? 'リレー停止'
-                                : 'リレー開始',
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: fullscreen ? '全画面を終了' : '全画面',
-                          color: Colors.white,
-                          icon: Icon(
-                            fullscreen
-                                ? Icons.fullscreen_exit
-                                : Icons.fullscreen,
-                          ),
-                          onPressed: () =>
-                              setState(() => fullscreen = !fullscreen),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     },
@@ -311,11 +332,16 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) => PopScope(
     canPop: !fullscreen,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop && fullscreen) setState(() => fullscreen = false);
+      if (!didPop && fullscreen) setFullscreen(false);
     },
     child: Scaffold(
+      backgroundColor: fullscreen ? Colors.black : null,
       appBar: fullscreen ? null : AppBar(title: Text(widget.channel.name)),
       body: SafeArea(
+        top: !fullscreen,
+        bottom: !fullscreen,
+        left: !fullscreen,
+        right: !fullscreen,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final landscape =
