@@ -184,17 +184,6 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                         ? playback.stop()
                         : playback.start(widget.channel),
                   ),
-                  TextButton(
-                    onPressed:
-                        !playback.active || widget.settings.maxRelays == 0
-                        ? null
-                        : playback.toggleRelay,
-                    child: Text(
-                      playback.relayEnabled && playback.active
-                          ? 'リレー停止'
-                          : 'リレー開始',
-                    ),
-                  ),
                   const Spacer(),
                   IconButton(
                     tooltip: fullscreen ? '全画面を終了' : '全画面',

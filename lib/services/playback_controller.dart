@@ -15,16 +15,38 @@ import 'peercast_engine.dart';
 import 'playback_audio_session.dart';
 
 class PlaybackController extends ChangeNotifier {
-  PlaybackController({required this.settings, EngineBackend? engine})
-    : engine = engine ?? PeerCastEngine() {
-    network = Connectivity().onConnectivityChanged.listen((links) {
-      if (active &&
-          (links.contains(ConnectivityResult.none) ||
-              (settings.wifiOnly &&
-                  !links.contains(ConnectivityResult.wifi)))) {
-        unawaited(stop(message: '回線が変わったため視聴・リレーを停止しました'));
-      }
-    });
+  PlaybackController({
+    required this.settings,
+    EngineBackend? engine,
+    Future<List<ConnectivityResult>> Function()? connectivityCheck,
+    Stream<List<ConnectivityResult>>? connectivityChanges,
+    Future<Directory> Function()? supportDirectory,
+    Player? Function()? playerFactory,
+    DateTime Function()? now,
+  }) : now = now ?? DateTime.now,
+       engine = engine ?? PeerCastEngine(),
+       checkConnectivity =
+           connectivityCheck ?? Connectivity().checkConnectivity,
+       supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
+       player = playerFactory != null
+           ? playerFactory()
+           : (Platform.isAndroid
+                 ? null
+                 : Player(
+                     configuration: const PlayerConfiguration(
+                       logLevel: kDebugMode
+                           ? MPVLogLevel.info
+                           : MPVLogLevel.error,
+                     ),
+                   )) {
+    network = (connectivityChanges ?? Connectivity().onConnectivityChanged)
+        .listen((links) {
+          if (active &&
+              (links.contains(ConnectivityResult.none) ||
+                  !links.contains(ConnectivityResult.wifi))) {
+            unawaited(stop(message: '回線が変わったため視聴・リレーを停止しました'));
+          }
+        });
     logs = player?.stream.log.listen((entry) {
       if (kDebugMode) debugPrint('Playback: $entry');
       if (active &&
@@ -38,16 +60,13 @@ class PlaybackController extends ChangeNotifier {
       if (active) unawaited(stop(message: '再生できませんでした: $e'));
     });
   }
+  final DateTime Function() now;
   final AppSettings settings;
   final EngineBackend engine;
   final _audioSession = PlaybackAudioSession();
-  final Player? player = Platform.isAndroid
-      ? null
-      : Player(
-          configuration: const PlayerConfiguration(
-            logLevel: kDebugMode ? MPVLogLevel.info : MPVLogLevel.error,
-          ),
-        );
+  final Player? player;
+  final Future<List<ConnectivityResult>> Function() checkConnectivity;
+  final Future<Directory> Function() supportDirectory;
   late final VideoController video = VideoController(player!);
   VideoPlayerController? androidVideo;
   late final StreamSubscription<List<ConnectivityResult>> network;
@@ -55,7 +74,7 @@ class PlaybackController extends ChangeNotifier {
   late final StreamSubscription<PlayerLog>? logs;
   EngineSnapshot snapshot = const EngineSnapshot();
   String message = '停止中';
-  bool active = false, opening = false, relayEnabled = true;
+  bool active = false, opening = false;
   bool simulatorAudioUnavailable = false;
   bool _disposed = false;
   int _generation = 0;
@@ -73,38 +92,103 @@ class PlaybackController extends ChangeNotifier {
     if (_disposed || ticket != _generation) return;
     active = true;
     opening = true;
+    final port = settings.port;
+    String portFailure() =>
+        'ポート $port の開放を確認できません。${snapshot.portCheckError.isEmpty ? 'Wi-FiとiPhoneへのポート転送設定を確認してください' : snapshot.portCheckError}';
     message = '接続中…';
-    relayEnabled = settings.maxRelays > 0;
     changed();
     try {
       if (!channel.playable) throw StateError('${channel.format} は再生対象外です');
-      final links = await Connectivity().checkConnectivity();
+      final links = await checkConnectivity();
       if (_disposed || ticket != _generation) return;
-      if (settings.wifiOnly && !links.contains(ConnectivityResult.wifi)) {
+      if (!links.contains(ConnectivityResult.wifi)) {
         throw StateError('Wi-Fiに接続してください');
       }
       if (links.contains(ConnectivityResult.none)) {
         throw StateError('ネットワークに接続してください');
       }
-      final directory = await getApplicationSupportDirectory();
+      final directory = await supportDirectory();
       if (_disposed || ticket != _generation) return;
       final uri = await engine.start(
         channel,
         directory.path,
-        settings.port,
+        port,
         settings.maxRelays,
       );
       if (_disposed || ticket != _generation) return;
-      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      message = 'ポート $port の開放を確認中…';
+      changed();
+      await engine.checkPort(channel);
+      final portDeadline = now().add(const Duration(seconds: 35));
+      while (true) {
+        if (_disposed || ticket != _generation) return;
+        snapshot = await engine.snapshot();
+        if (_disposed || ticket != _generation) return;
+        if (snapshot.firewall == 'reachable') break;
+        if (!snapshot.running ||
+            snapshot.firewall == 'blocked' ||
+            now().isAfter(portDeadline)) {
+          throw StateError(portFailure());
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      final currentLinks = await checkConnectivity();
+      if (_disposed || ticket != _generation) return;
+      if (!currentLinks.contains(ConnectivityResult.wifi) ||
+          currentLinks.contains(ConnectivityResult.none)) {
+        throw StateError('Wi-Fiに接続してください');
+      }
+      await engine.connect(channel);
+      if (_disposed || ticket != _generation) return;
+      var lastPortCheck = now();
+      var lost = 0;
+      timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+        if (_polling || !active) return;
+        _polling = true;
+        try {
+          final links = await checkConnectivity();
+          if (_disposed || ticket != _generation) return;
+          if (!links.contains(ConnectivityResult.wifi) ||
+              links.contains(ConnectivityResult.none)) {
+            await stop(message: 'Wi-Fi接続が失われたため視聴・リレーを停止しました');
+            return;
+          }
+          final next = await engine.snapshot();
+          if (_disposed || ticket != _generation) return;
+          snapshot = next;
+          if (!next.running || next.firewall != 'reachable') {
+            await stop(message: portFailure());
+            return;
+          }
+          lost = next.playing || opening ? 0 : lost + 1;
+          if (lost >= 15) {
+            await stop(message: '配信との接続が終了しました');
+            return;
+          }
+          if (now().difference(lastPortCheck).inSeconds >= 15) {
+            lastPortCheck = now();
+            await engine.checkPort(channel);
+          }
+          changed();
+        } catch (e) {
+          if (ticket == _generation) await stop(message: '接続状態を確認できませんでした: $e');
+        } finally {
+          _polling = false;
+        }
+      });
+      final deadline = now().add(const Duration(seconds: 60));
       while (active && ticket == _generation) {
         snapshot = await engine.snapshot();
         if (_disposed || ticket != _generation) return;
         changed();
+        if (snapshot.firewall != 'reachable') {
+          throw StateError('ポート開放を確認できないため停止しました');
+        }
         if (snapshot.playing) break;
         if (!snapshot.running) {
           throw StateError('視聴エンジンを開始できませんでした。待受ポートを確認してください');
         }
-        if (DateTime.now().isAfter(deadline)) {
+        if (now().isAfter(deadline)) {
           throw TimeoutException('配信に接続できませんでした');
         }
         await Future<void>.delayed(const Duration(milliseconds: 400));
@@ -145,37 +229,10 @@ class PlaybackController extends ChangeNotifier {
       opening = false;
       message = '視聴中';
       changed();
-      var lost = 0;
-      timer = Timer.periodic(const Duration(seconds: 1), (_) async {
-        if (_polling || !active) return;
-        _polling = true;
-        try {
-          final next = await engine.snapshot();
-          if (_disposed || ticket != _generation) return;
-          snapshot = next;
-          changed();
-          lost = next.playing ? 0 : lost + 1;
-          if (!next.running || lost >= 15) await stop(message: '配信との接続が終了しました');
-        } catch (e) {
-          if (ticket == _generation) await stop(message: '接続状態を取得できませんでした: $e');
-        } finally {
-          _polling = false;
-        }
-      });
     } catch (e) {
-      if (!_disposed && ticket == _generation) await stop(message: '$e');
-    }
-  }
-
-  Future<void> toggleRelay() async {
-    if (!active) return;
-    try {
-      await engine.setRelays(relayEnabled ? 0 : settings.maxRelays);
-      relayEnabled = !relayEnabled;
-      changed();
-    } catch (e) {
-      message = 'リレー設定に失敗しました: $e';
-      changed();
+      if (!_disposed && ticket == _generation) {
+        await stop(message: e is StateError ? e.message : '$e');
+      }
     }
   }
 
@@ -188,12 +245,14 @@ class PlaybackController extends ChangeNotifier {
     this.message = message;
     changed();
     _cleanup = _cleanup.then((_) async {
-      // Stop network first, even if disposing the media player takes longer.
-      try {
-        await engine.stop();
-      } catch (e) {
-        this.message = '停止処理を確認できませんでした: $e';
-      }
+      // Stop networking and media together; native cleanup may take time.
+      final stoppingEngine = () async {
+        try {
+          await engine.stop();
+        } catch (e) {
+          this.message = '停止処理を確認できませんでした: $e';
+        }
+      }();
       try {
         final output = androidVideo;
         androidVideo = null;
@@ -207,6 +266,7 @@ class PlaybackController extends ChangeNotifier {
       } catch (e) {
         if (kDebugMode) debugPrint('Audio session cleanup: $e');
       }
+      await stoppingEngine;
       snapshot = const EngineSnapshot();
       changed();
     });

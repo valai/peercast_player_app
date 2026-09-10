@@ -13,6 +13,7 @@
 #include "channel.h"
 #include "servmgr.h"
 #include "stats.h"
+#include "pcp.h"
 #include "yplist.h"
 #include "json.hpp"
 #ifdef __ANDROID__
@@ -24,6 +25,14 @@ std::recursive_mutex apiMutex;
 std::mutex requestMutex;
 std::string activeId, lastError, directory;
 std::atomic<bool> running{false}, relaysAllowed{false};
+std::atomic<int> portState{0}; // 0 unknown, 1 externally verified, 2 failed
+std::atomic<bool> checkingPort{false};
+std::chrono::steady_clock::time_point portCheckStarted;
+std::mutex probeMutex;
+std::shared_ptr<ClientSocket> probeSocket;
+ThreadInfo probeThread;
+std::string probeTracker, probeChannelId, portCheckError;
+
 class MobileSys final : public USys {
  public:
   std::mutex mutex;
@@ -101,9 +110,10 @@ int fail(const std::string& message) { lastError = message; return -1; }
 // No management endpoints, arbitrary files, POST, broadcasting or other channels.
 bool mobileRequestAllowed(const char* line, bool local) {
   std::lock_guard<std::mutex> g(requestMutex);
-  if (!running || activeId.empty()) return false;
+  if (!running) return false;
   const std::string request(line);
   if (request.rfind("pcp", 0) == 0 || request.rfind("GIV", 0) == 0) return true;
+  if (activeId.empty() || portState != 1) return false;
   const auto end = request.find(' ', 4);
   if (end == std::string::npos || request.rfind("GET ", 0) != 0) return false;
   const auto path = request.substr(4, end - 4);
@@ -114,6 +124,7 @@ EXPORT int pc_stop() {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
   if (!sys) return 0;
   running = false;
+  { std::lock_guard<std::mutex> g(probeMutex); interruptSocket(probeSocket); }
   { std::lock_guard<std::mutex> g(requestMutex); activeId.clear(); }
   instance.isQuitting = true;
   servMgr->serverThread.shutdown(); servMgr->idleThread.shutdown();
@@ -148,7 +159,7 @@ EXPORT int pc_stop() {
 EXPORT int pc_start(const char* path, int port, int relays) {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
   try {
-    if (port < 1024 || port > 65535 || relays < 0 || relays > 16) return fail("Invalid port or relay limit");
+    if (port < 1024 || port > 65535 || relays < 1 || relays > 16) return fail("Invalid port or relay limit");
     if (sys && pc_stop() != 0) return -1;
     directory = path;
     if (!sys) {
@@ -164,16 +175,138 @@ EXPORT int pc_start(const char* path, int port, int relays) {
     servMgr->autoServe = true; servMgr->autoConnect = false;
     servMgr->rootHost.clear(); servMgr->restartServer = false;
     stats.clear();
-    relaysAllowed = relays > 0; running = true;
+    portState = 0; checkingPort = false;
+    { std::lock_guard<std::mutex> g(probeMutex); portCheckError.clear(); }
+    relaysAllowed = true; running = true;
     if (!servMgr->start()) { pc_stop(); return fail("Cannot start core threads"); }
     lastError.clear(); return 0;
   } catch (const std::exception& e) { pc_stop(); return fail(e.what()); }
     catch (...) { pc_stop(); return fail("Native initialization failed"); }
 }
+// Probe without starting a channel. Keep the socket interruptible by pc_stop.
+EXPORT int pc_check_port(const char* tracker, const char* channelId) {
+  std::lock_guard<std::recursive_mutex> api(apiMutex);
+  if (!running) return fail("Inactive engine");
+  if (!channelId || !std::regex_match(channelId, std::regex("[A-Fa-f0-9]{32}")))
+    return fail("Invalid port check channel");
+  if (checkingPort) return 0;
+  probeChannelId = channelId;
+  probeTracker = tracker;
+  portCheckStarted = std::chrono::steady_clock::now();
+  checkingPort = true;
+  probeThread.func = [](ThreadInfo*) -> int {
+    int result = 2;
+    std::string detail = "確認先との通信に失敗しました";
+    try {
+      // pc_start launches the listener asynchronously. Do not ask the peer
+      // to call back until bind/listen has completed.
+      bool listening = false;
+      for (int i = 0; i < 100 && running; ++i) {
+        {
+          std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+          for (auto s = servMgr->servents; s; s = s->next) {
+            std::lock_guard<std::recursive_mutex> sg(s->lock);
+            if (s->type == Servent::T_SERVER && s->status == Servent::S_LISTENING) listening = true;
+          }
+        }
+        if (listening) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      }
+      detail = "待受ポートを開始できませんでした";
+      if (!listening || !running) throw GeneralException("Listener not ready");
+      detail = "確認先との接続または応答の取得に失敗しました";
+      auto host = Host::fromString(probeTracker.c_str(), 7144);
+      if (!host.ip.isIPv4Mapped()) {
+        detail = "確認先のIPv4アドレスを取得できませんでした";
+        throw GeneralException("IPv4 reachability required");
+      }
+      auto socket = sys->createSocket();
+      socket->setReadTimeout(20000);
+      socket->setWriteTimeout(10000);
+      socket->open(host);
+      {
+        std::lock_guard<std::mutex> g(probeMutex);
+        if (!running) { checkingPort = false; return 0; }
+        probeSocket = socket;
+      }
+      socket->connect();
+      AtomStream atom(*socket);
+      // A bare PCP_CONNECT reaches PeerCastStation's pong-only handler,
+      // which returns just a session ID and does not perform a reverse probe.
+      // Use the relay handshake (200 or full/busy 503) on both YT and Station.
+      socket->writeLineF("GET /channel/%s HTTP/1.0", probeChannelId.c_str());
+      socket->writeLine("x-peercast-pcp: 1");
+      socket->writeLine("");
+      char line[4096];
+      auto readLine = [&] {
+        if (socket->readLine(line, sizeof(line)) >= static_cast<int>(sizeof(line) - 1))
+          throw GeneralException("Port check HTTP header too long");
+      };
+      readLine();
+      if (!std::regex_match(line, std::regex("HTTP/1\\.[01] (200|503)( .*)?"))) {
+        detail = "確認先がポート確認に対応していないか、配信が終了しています";
+        throw GeneralException("Unexpected port check HTTP status");
+      }
+      bool headersComplete = false;
+      for (int i = 0; i < 64; ++i) {
+        readLine();
+        if (!line[0]) { headersComplete = true; break; }
+      }
+      if (!headersComplete) throw GeneralException("Too many port check HTTP headers");
+      // Always request a fresh reverse connection to the configured port.
+      Servent::writeHeloAtom(atom, false, true, false, servMgr->sessionID,
+                            servMgr->serverHost.port, chanMgr->broadcastID);
+      int children, bytes;
+      if (atom.read(children, bytes) != PCP_OLEH || children < 0 || children > 64)
+        throw GeneralException("Invalid port check response");
+      Host external;
+      bool sessionValid = false, portReceived = false;
+      for (int i = 0; i < children; ++i) {
+        int count, length;
+        auto id = atom.read(count, length);
+        if (id == PCP_HELO_PORT && count == 0 && length == 2) {
+          external.port = atom.readShort(); portReceived = true;
+        }
+        else if (id == PCP_HELO_REMOTEIP) external.ip = atom.readAddress();
+        else if (id == PCP_HELO_SESSIONID && length == 16) {
+          GnuID remote; atom.readBytes(remote.id, 16);
+          sessionValid = remote.isSet() && !remote.isSame(servMgr->sessionID);
+        } else atom.skip(count, length);
+      }
+      if (sessionValid && external.globalIP() && external.port == servMgr->serverHost.port) {
+        result = 1;
+        detail.clear();
+      } else {
+        detail = portReceived && external.port == 0
+          ? "確認先から逆接続できないと応答されました。iPhoneへのポート転送を確認してください"
+          : "確認先から有効なポート確認結果を取得できませんでした";
+      }
+      // OLEH is the result. A peer may close immediately afterwards (e.g.
+      // an off-air or busy tracker). QUIT is best-effort cleanup and must
+      // never turn a verified reverse connection into a failed port check.
+      try { atom.writeInt(PCP_QUIT, PCP_ERROR_QUIT); } catch (...) {}
+      try { socket->close(); } catch (...) {}
+    } catch (...) { result = 2; }
+    {
+      std::lock_guard<std::mutex> g(probeMutex);
+      probeSocket.reset();
+      portCheckError = detail;
+    }
+    portState = result;
+    checkingPort = false;
+    return 0;
+  };
+  if (!sys->startThread(&probeThread)) {
+    checkingPort = false; portState = 2;
+    return fail("Cannot start port check");
+  }
+  return 0;
+}
 EXPORT int pc_connect(const char* id, const char* tracker) {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
   try {
     if (!running || !std::regex_match(id, std::regex("[A-Fa-f0-9]{32}"))) return fail("Invalid channel or inactive engine");
+    if (portState != 1) return fail("Port reachability has not been verified");
     if (selected) return fail("Stop the current session before selecting another channel");
     auto host = Host::fromString(tracker, 7144);
     if (host.port == 0) return fail("Invalid tracker port");
@@ -188,7 +321,7 @@ EXPORT int pc_connect(const char* id, const char* tracker) {
 }
 EXPORT int pc_set_relays(int count) {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
-  if (!running || count < 0 || count > 16) return fail("Invalid relay configuration");
+  if (!running || count < 1 || count > 16) return fail("Invalid relay configuration");
   std::lock_guard<std::recursive_mutex> g(servMgr->lock);
   relaysAllowed = count > 0; servMgr->maxRelays = count; chanMgr->maxRelaysPerChannel = count;
   if (count == 0) for (auto s = servMgr->servents; s; s = s->next) if (s->type == Servent::T_RELAY) { s->thread.shutdown(); interruptSocket(s->sock); }
@@ -202,10 +335,22 @@ EXPORT const char* pc_snapshot() {
     if (running && servMgr) {
       {
       std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+      j["listening"] = false;
+      for (auto s = servMgr->servents; s; s = s->next) {
+        std::lock_guard<std::recursive_mutex> sg(s->lock);
+        if (s->type == Servent::T_SERVER && s->status == Servent::S_LISTENING) j["listening"] = true;
+      }
       j["relays"] = servMgr->numStreams(Servent::T_RELAY, true);
       j["bytesOut"] = stats.getCurrent(Stats::BYTESOUT) - stats.getCurrent(Stats::LOCALBYTESOUT);
-      const auto fw = servMgr->getFirewall(4);
-      j["firewall"] = fw == ServMgr::FW_OFF ? "reachable" : fw == ServMgr::FW_ON ? "blocked" : "unknown";
+      {
+        std::lock_guard<std::mutex> pg(probeMutex);
+        if (checkingPort && std::chrono::steady_clock::now() - portCheckStarted > std::chrono::seconds(30)) {
+          portState = 2;
+          portCheckError = "ポート確認がタイムアウトしました";
+        }
+        j["portCheckError"] = portCheckError;
+      }
+      j["firewall"] = portState == 1 ? "reachable" : portState == 2 ? "blocked" : "unknown";
       }
       if (selected) { std::lock_guard<std::recursive_mutex> cg(selected->lock); j["playing"] = selected->isPlaying(); j["status"] = Channel::statusMsgs[selected->status]; }
     }

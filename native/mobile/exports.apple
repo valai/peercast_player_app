@@ -4,3 +4,4 @@ _pc_stop
 _pc_snapshot
 _pc_error
 _pc_set_relays
+_pc_check_port

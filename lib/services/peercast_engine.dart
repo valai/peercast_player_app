@@ -10,35 +10,46 @@ import '../models/channel.dart';
 class EngineSnapshot {
   const EngineSnapshot({
     this.running = false,
+    this.listening = false,
     this.playing = false,
     this.relays = 0,
     this.bytesOut = 0,
     this.firewall = 'unknown',
     this.status = 'stopped',
+    this.portCheckError = '',
   });
   factory EngineSnapshot.fromJson(Map<String, dynamic> j) => EngineSnapshot(
     running: j['running'] == true,
+    listening: j['listening'] == true,
     playing: j['playing'] == true,
     relays: (j['relays'] as num?)?.toInt() ?? 0,
     bytesOut: (j['bytesOut'] as num?)?.toInt() ?? 0,
     firewall: j['firewall'] as String? ?? 'unknown',
     status: j['status'] as String? ?? 'stopped',
+    portCheckError: j['portCheckError'] as String? ?? '',
   );
-  final bool running, playing;
+  final bool running, playing, listening;
   final int relays, bytesOut;
-  final String firewall, status;
+  final String firewall, status, portCheckError;
 }
 
 abstract interface class EngineBackend {
   Future<Uri> start(Channel channel, String directory, int port, int relays);
   Future<EngineSnapshot> snapshot();
-  Future<void> setRelays(int count);
+  Future<void> connect(Channel channel);
+  Future<void> checkPort(Channel channel);
+  Future<void> stop();
+}
+
+abstract interface class PortListenerBackend {
+  Future<void> startListener(String directory, int port, int relays);
+  Future<EngineSnapshot> snapshot();
   Future<void> stop();
 }
 
 // Each screen has an owner token. Late disposal of an old screen cannot stop
 // the new screen's core. Blocking FFI calls run only in the worker isolate.
-class PeerCastEngine implements EngineBackend {
+class PeerCastEngine implements EngineBackend, PortListenerBackend {
   final String owner =
       '${DateTime.now().microsecondsSinceEpoch}-${_nextOwner++}';
   static int _nextOwner = 0;
@@ -73,16 +84,19 @@ class PeerCastEngine implements EngineBackend {
     int relays,
   ) async {
     if (!channel.playable) throw StateError('FLV形式のチャンネルを選択してください');
+    await startListener(directory, port, relays);
+    return Uri.parse(
+      'http://127.0.0.1:$port/stream/${channel.id.toUpperCase()}.flv',
+    );
+  }
+
+  @override
+  Future<void> startListener(String directory, int port, int relays) async {
     await _call('start', {
       'directory': directory,
       'port': port,
       'relays': relays,
-      'id': channel.id,
-      'tracker': channel.tracker,
     });
-    return Uri.parse(
-      'http://127.0.0.1:$port/stream/${channel.id.toUpperCase()}.flv',
-    );
   }
 
   @override
@@ -90,8 +104,13 @@ class PeerCastEngine implements EngineBackend {
     Map<String, dynamic>.from(await _call('snapshot') as Map),
   );
   @override
-  Future<void> setRelays(int count) async {
-    await _call('relays', {'count': count});
+  Future<void> connect(Channel channel) async {
+    await _call('connect', {'id': channel.id, 'tracker': channel.tracker});
+  }
+
+  @override
+  Future<void> checkPort(Channel channel) async {
+    await _call('checkPort', {'tracker': channel.tracker, 'id': channel.id});
   }
 
   @override
@@ -120,10 +139,11 @@ void _engineWorker(SendPort ready) {
     final stop = library.lookupFunction<Int32 Function(), int Function()>(
       'pc_stop',
     );
-    final relays = library
-        .lookupFunction<Int32 Function(Int32), int Function(int)>(
-          'pc_set_relays',
-        );
+    final checkPort = library
+        .lookupFunction<
+          Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
+          int Function(Pointer<Utf8>, Pointer<Utf8>)
+        >('pc_check_port');
     final error = library
         .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
           'pc_error',
@@ -146,27 +166,38 @@ void _engineWorker(SendPort ready) {
         dynamic value;
         if (m['op'] == 'start') {
           final path = (m['directory'] as String).toNativeUtf8();
-          final id = (m['id'] as String).toNativeUtf8();
-          final tracker = (m['tracker'] as String).toNativeUtf8();
           try {
             check(start(path, m['port'] as int, m['relays'] as int));
             owner = m['owner'] as String;
-            check(connect(id, tracker));
           } catch (_) {
             stop();
             rethrow;
           } finally {
             calloc.free(path);
-            calloc.free(id);
-            calloc.free(tracker);
           }
         } else if (owner == m['owner']) {
           switch (m['op']) {
             case 'stop':
               check(stop());
               owner = null;
-            case 'relays':
-              check(relays(m['count'] as int));
+            case 'connect':
+              final id = (m['id'] as String).toNativeUtf8();
+              final tracker = (m['tracker'] as String).toNativeUtf8();
+              try {
+                check(connect(id, tracker));
+              } finally {
+                calloc.free(id);
+                calloc.free(tracker);
+              }
+            case 'checkPort':
+              final id = (m['id'] as String).toNativeUtf8();
+              final tracker = (m['tracker'] as String).toNativeUtf8();
+              try {
+                check(checkPort(tracker, id));
+              } finally {
+                calloc.free(id);
+                calloc.free(tracker);
+              }
             case 'snapshot':
               value = jsonDecode(snapshot().toDartString());
           }

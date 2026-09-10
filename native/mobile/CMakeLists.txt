@@ -86,3 +86,9 @@ option(PEERCAST_FLV_HEADER_TEST "Build FLV playback header regression tests" OFF
 if(PEERCAST_FLV_HEADER_TEST)
   add_executable(flv_playback_header_test flv_playback_header_test.cpp)
 endif()
+
+option(PEERCAST_PORT_CHECK_TEST "Build reverse PCP port check regression test" OFF)
+if(PEERCAST_PORT_CHECK_TEST)
+  add_executable(port_check_test port_check_test.cpp)
+  target_link_libraries(port_check_test PRIVATE peercast_mobile)
+endif()

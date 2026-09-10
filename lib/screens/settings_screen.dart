@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
+import 'port_check_screen.dart';
 import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -87,23 +88,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
           const ListTile(
             title: Text('視聴・リレー'),
-            subtitle: Text('設定は次回の視聴開始時に適用されます。背景移行で視聴・リレーを停止します。'),
-          ),
-          SwitchListTile(
-            title: const Text('Wi-Fi接続時のみ視聴・リレー'),
-            value: s.wifiOnly,
-            onChanged: (v) async {
-              s.wifiOnly = v;
-              await save();
-            },
+            subtitle: Text('Wi-Fi接続とポート開放が必要です。視聴中は必ずリレーを行い、背景移行で停止します。'),
           ),
           ListTile(
             title: const Text('下流の最大接続数'),
             trailing: DropdownButton<int>(
               value: s.maxRelays,
               items: List.generate(
-                17,
-                (i) => DropdownMenuItem(value: i, child: Text('$i')),
+                16,
+                (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}')),
               ),
               onChanged: (v) async {
                 if (v != null) {
@@ -140,6 +133,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text('リレーの可否は外部からの到達確認が必要です。待受ポートの設定だけではリレー可能になりません。'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.network_check),
+            title: const Text('SPでポート開放を確認'),
+            subtitle: Text('ポート ${s.port} で確認用の待受を開始します'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    PortCheckScreen(port: s.port, relays: s.maxRelays),
+              ),
+            ),
           ),
           ListTile(
             title: const Text('ライセンス'),
