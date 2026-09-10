@@ -92,6 +92,9 @@ class PlaybackController extends ChangeNotifier {
     if (_disposed || ticket != _generation) return;
     active = true;
     opening = true;
+    final port = settings.port;
+    String portFailure() =>
+        'ポート $port の開放を確認できません。${snapshot.portCheckError.isEmpty ? 'Wi-FiとiPhoneへのポート転送設定を確認してください' : snapshot.portCheckError}';
     message = '接続中…';
     changed();
     try {
@@ -109,11 +112,11 @@ class PlaybackController extends ChangeNotifier {
       final uri = await engine.start(
         channel,
         directory.path,
-        settings.port,
+        port,
         settings.maxRelays,
       );
       if (_disposed || ticket != _generation) return;
-      message = 'ポート開放を確認中…';
+      message = 'ポート $port の開放を確認中…';
       changed();
       await engine.checkPort(channel.tracker);
       final portDeadline = now().add(const Duration(seconds: 35));
@@ -125,7 +128,7 @@ class PlaybackController extends ChangeNotifier {
         if (!snapshot.running ||
             snapshot.firewall == 'blocked' ||
             now().isAfter(portDeadline)) {
-          throw StateError('設定したポートの開放を確認できません。Wi-Fiとポート転送設定を確認してください');
+          throw StateError(portFailure());
         }
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
@@ -154,7 +157,7 @@ class PlaybackController extends ChangeNotifier {
           if (_disposed || ticket != _generation) return;
           snapshot = next;
           if (!next.running || next.firewall != 'reachable') {
-            await stop(message: 'ポート開放を確認できないため視聴・リレーを停止しました');
+            await stop(message: portFailure());
             return;
           }
           lost = next.playing || opening ? 0 : lost + 1;
@@ -227,7 +230,9 @@ class PlaybackController extends ChangeNotifier {
       message = '視聴中';
       changed();
     } catch (e) {
-      if (!_disposed && ticket == _generation) await stop(message: '$e');
+      if (!_disposed && ticket == _generation) {
+        await stop(message: e is StateError ? e.message : '$e');
+      }
     }
   }
 

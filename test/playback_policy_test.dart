@@ -38,8 +38,11 @@ class FakeEngine implements EngineBackend {
   }
 
   @override
-  Future<EngineSnapshot> snapshot() async =>
-      EngineSnapshot(running: running, firewall: firewall);
+  Future<EngineSnapshot> snapshot() async => EngineSnapshot(
+    running: running,
+    firewall: firewall,
+    portCheckError: firewall == 'blocked' ? '確認先から逆接続できないと応答されました' : '',
+  );
   @override
   Future<void> stop() async {
     running = false;
@@ -49,6 +52,13 @@ class FakeEngine implements EngineBackend {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('ポート確認の診断を読み込み、旧形式にも対応する', () {
+    expect(
+      EngineSnapshot.fromJson({'portCheckError': '確認先との通信失敗'}).portCheckError,
+      '確認先との通信失敗',
+    );
+    expect(EngineSnapshot.fromJson({}).portCheckError, isEmpty);
+  });
   test('旧設定のWi-Fi無効・リレー0を移行する', () async {
     await AppSettings.load();
     final prefs = await SharedPreferences.getInstance();
@@ -116,6 +126,9 @@ void main() {
         expect(engine.starts, 0);
         expect(controller.active, false);
       } else if (scenario == 'blocked') {
+        expect(controller.message, contains('7145'));
+        expect(controller.message, contains('逆接続できない'));
+        expect(controller.message, isNot(contains('Bad state')));
         expect(engine.checks, 1);
         expect(engine.connects, 0);
         expect(controller.active, false);

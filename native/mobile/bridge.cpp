@@ -31,7 +31,7 @@ std::chrono::steady_clock::time_point portCheckStarted;
 std::mutex probeMutex;
 std::shared_ptr<ClientSocket> probeSocket;
 ThreadInfo probeThread;
-std::string probeTracker;
+std::string probeTracker, portCheckError;
 
 class MobileSys final : public USys {
  public:
@@ -176,6 +176,7 @@ EXPORT int pc_start(const char* path, int port, int relays) {
     servMgr->rootHost.clear(); servMgr->restartServer = false;
     stats.clear();
     portState = 0; checkingPort = false;
+    { std::lock_guard<std::mutex> g(probeMutex); portCheckError.clear(); }
     relaysAllowed = true; running = true;
     if (!servMgr->start()) { pc_stop(); return fail("Cannot start core threads"); }
     lastError.clear(); return 0;
@@ -192,11 +193,32 @@ EXPORT int pc_check_port(const char* tracker) {
   checkingPort = true;
   probeThread.func = [](ThreadInfo*) -> int {
     int result = 2;
+    std::string detail = "確認先との通信に失敗しました";
     try {
+      // pc_start launches the listener asynchronously. Do not ask the peer
+      // to call back until bind/listen has completed.
+      bool listening = false;
+      for (int i = 0; i < 100 && running; ++i) {
+        {
+          std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+          for (auto s = servMgr->servents; s; s = s->next) {
+            std::lock_guard<std::recursive_mutex> sg(s->lock);
+            if (s->type == Servent::T_SERVER && s->status == Servent::S_LISTENING) listening = true;
+          }
+        }
+        if (listening) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      }
+      detail = "待受ポートを開始できませんでした";
+      if (!listening || !running) throw GeneralException("Listener not ready");
+      detail = "確認先との接続または応答の取得に失敗しました";
       auto host = Host::fromString(probeTracker.c_str(), 7144);
-      if (!host.ip.isIPv4Mapped()) throw GeneralException("IPv4 reachability required");
+      if (!host.ip.isIPv4Mapped()) {
+        detail = "確認先のIPv4アドレスを取得できませんでした";
+        throw GeneralException("IPv4 reachability required");
+      }
       auto socket = sys->createSocket();
-      socket->setReadTimeout(10000);
+      socket->setReadTimeout(20000);
       socket->setWriteTimeout(10000);
       socket->open(host);
       {
@@ -225,13 +247,24 @@ EXPORT int pc_check_port(const char* tracker) {
           sessionValid = remote.isSet() && !remote.isSame(servMgr->sessionID);
         } else atom.skip(count, length);
       }
-      if (sessionValid && external.globalIP() && external.port == servMgr->serverHost.port) result = 1;
-      atom.writeInt(PCP_QUIT, PCP_ERROR_QUIT);
-      socket->close();
+      if (sessionValid && external.globalIP() && external.port == servMgr->serverHost.port) {
+        result = 1;
+        detail.clear();
+      } else {
+        detail = external.port == 0
+          ? "確認先から逆接続できないと応答されました。iPhoneへのポート転送を確認してください"
+          : "確認先から有効なポート確認結果を取得できませんでした";
+      }
+      // OLEH is the result. A peer may close immediately afterwards (e.g.
+      // an off-air or busy tracker). QUIT is best-effort cleanup and must
+      // never turn a verified reverse connection into a failed port check.
+      try { atom.writeInt(PCP_QUIT, PCP_ERROR_QUIT); } catch (...) {}
+      try { socket->close(); } catch (...) {}
     } catch (...) { result = 2; }
     {
       std::lock_guard<std::mutex> g(probeMutex);
       probeSocket.reset();
+      portCheckError = detail;
     }
     portState = result;
     checkingPort = false;
@@ -278,7 +311,14 @@ EXPORT const char* pc_snapshot() {
       std::lock_guard<std::recursive_mutex> g(servMgr->lock);
       j["relays"] = servMgr->numStreams(Servent::T_RELAY, true);
       j["bytesOut"] = stats.getCurrent(Stats::BYTESOUT) - stats.getCurrent(Stats::LOCALBYTESOUT);
-      if (checkingPort && std::chrono::steady_clock::now() - portCheckStarted > std::chrono::seconds(30)) portState = 2;
+      {
+        std::lock_guard<std::mutex> pg(probeMutex);
+        if (checkingPort && std::chrono::steady_clock::now() - portCheckStarted > std::chrono::seconds(30)) {
+          portState = 2;
+          portCheckError = "ポート確認がタイムアウトしました";
+        }
+        j["portCheckError"] = portCheckError;
+      }
       j["firewall"] = portState == 1 ? "reachable" : portState == 2 ? "blocked" : "unknown";
       }
       if (selected) { std::lock_guard<std::recursive_mutex> cg(selected->lock); j["playing"] = selected->isPlaying(); j["status"] = Channel::statusMsgs[selected->status]; }

@@ -15,6 +15,7 @@ class EngineSnapshot {
     this.bytesOut = 0,
     this.firewall = 'unknown',
     this.status = 'stopped',
+    this.portCheckError = '',
   });
   factory EngineSnapshot.fromJson(Map<String, dynamic> j) => EngineSnapshot(
     running: j['running'] == true,
@@ -23,10 +24,11 @@ class EngineSnapshot {
     bytesOut: (j['bytesOut'] as num?)?.toInt() ?? 0,
     firewall: j['firewall'] as String? ?? 'unknown',
     status: j['status'] as String? ?? 'stopped',
+    portCheckError: j['portCheckError'] as String? ?? '',
   );
   final bool running, playing;
   final int relays, bytesOut;
-  final String firewall, status;
+  final String firewall, status, portCheckError;
 }
 
 abstract interface class EngineBackend {
