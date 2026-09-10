@@ -7,6 +7,7 @@ import 'models/channel.dart';
 import 'services/app_settings.dart';
 import 'services/channel_directory.dart';
 import 'screens/settings_screen.dart';
+import 'screens/keyboard_dismiss.dart';
 import 'screens/watch_screen.dart';
 
 Future<void> main() async {
@@ -34,6 +35,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'PeerCast',
+    builder: (context, child) => KeyboardDismiss(child: child!),
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff167f8b)),
@@ -144,6 +146,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: TextField(
               focusNode: searchFocus,
+              onTapOutside: (_) => searchFocus.unfocus(),
               decoration: const InputDecoration(
                 hintText: 'チャンネル・配信内容を検索',
                 prefixIcon: Icon(Icons.search),

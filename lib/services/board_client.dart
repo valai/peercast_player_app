@@ -57,7 +57,14 @@ class BoardClient {
     if (encoding.toLowerCase() == 'utf-8') {
       return Future.value(utf8.decode(response.bodyBytes));
     }
-    return CharsetConverter.decode(encoding, response.bodyBytes);
+    // Japanese BBS DAT uses Windows extensions even when labeled Shift_JIS.
+    final normalized = encoding.toLowerCase().replaceAll('-', '_');
+    return CharsetConverter.decode(
+      ['shift_jis', 'sjis', 'windows_31j'].contains(normalized)
+          ? 'cp932'
+          : encoding,
+      response.bodyBytes,
+    );
   }
 
   static BoardThread parse(String text, BoardType type) {

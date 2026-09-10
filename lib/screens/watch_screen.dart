@@ -155,7 +155,6 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  BroadcastClock(channel: widget.channel),
                   ViewerCount(
                     channel: widget.channel,
                     settings: widget.settings,
@@ -184,7 +183,16 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                         ? playback.stop()
                         : playback.start(widget.channel),
                   ),
+                  BroadcastClock(channel: widget.channel),
                   const Spacer(),
+                  IconButton(
+                    tooltip: playback.muted ? 'ミュート解除' : 'ミュート',
+                    color: Colors.white,
+                    icon: Icon(
+                      playback.muted ? Icons.volume_off : Icons.volume_up,
+                    ),
+                    onPressed: playback.toggleMute,
+                  ),
                   IconButton(
                     tooltip: fullscreen ? '全画面を終了' : '全画面',
                     color: Colors.white,
