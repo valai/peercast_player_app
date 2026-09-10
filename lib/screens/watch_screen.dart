@@ -349,7 +349,13 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) => PopScope(
     canPop: !fullscreen,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop && fullscreen) setFullscreen(false);
+      if (didPop) {
+        // dispose runs only after the reverse route animation. Stop output
+        // now, before the directory starts reloading behind that animation.
+        unawaited(playback.stop());
+      } else if (fullscreen) {
+        setFullscreen(false);
+      }
     },
     child: Scaffold(
       backgroundColor: fullscreen ? Colors.black : null,

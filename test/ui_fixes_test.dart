@@ -68,7 +68,7 @@ void main() {
     await tester.tap(find.text('視聴・リレー'));
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, false);
-    await tester.pageBack();
+    await tester.tap(find.byTooltip('戻る'));
     await tester.pumpAndSettle();
     expect(calls, greaterThan(before));
   });

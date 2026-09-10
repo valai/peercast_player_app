@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <condition_variable>
 #include <mutex>
 #include <regex>
@@ -23,6 +24,8 @@
 namespace {
 std::recursive_mutex apiMutex;
 std::mutex requestMutex;
+std::mutex connectionErrorMutex;
+std::string connectionError;
 std::string activeId, lastError, directory;
 std::atomic<bool> running{false}, relaysAllowed{false};
 std::atomic<int> portState{0}; // 0 unknown, 1 externally verified, 2 failed
@@ -90,6 +93,22 @@ class MobileApp final : public PeercastApplication {
   const char* getStateDirPath() override { return directory.c_str(); }
   const char* getCacheDirPath() override { return directory.c_str(); }
   void printLog(LogBuffer::TYPE type, const char* message) override {
+    // iOS has no Android logcat. Preserve a bounded connection-specific error
+    // so a receiving timeout can be diagnosed on a physical device as well.
+    if (type == LogBuffer::T_ERROR &&
+        (std::strncmp(message, "Channel to ", 11) == 0 ||
+         std::strncmp(message, "PCP readPacket:", 15) == 0 ||
+         std::strcmp(message, "Channel giving up") == 0 ||
+         std::strcmp(message, "Channel not found") == 0)) {
+      const std::string text(message);
+      std::lock_guard<std::mutex> g(connectionErrorMutex);
+      if (!connectionError.empty()) connectionError += " / ";
+      connectionError += text.substr(0, 240);
+      while (connectionError.size() > 768) {
+        const auto boundary = connectionError.find(" / ");
+        connectionError.erase(0, boundary == std::string::npos ? connectionError.size() : boundary + 3);
+      }
+    }
 #ifdef __ANDROID__
     __android_log_print(type == LogBuffer::T_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "PeerCastCore", "%s", message);
 #endif
@@ -166,6 +185,7 @@ EXPORT int pc_start(const char* path, int port, int relays) {
       peercastApp = &app; peercastInst = &instance;
       sys = instance.createSys(); servMgr = new ServMgr(); chanMgr = new ChanMgr(); g_ypList = new YPList();
     }
+    { std::lock_guard<std::mutex> g(connectionErrorMutex); connectionError.clear(); }
     instance.isQuitting = false;
     servMgr->allowServer1 = Servent::ALLOW_NETWORK;
     servMgr->maxRelays = relays; chanMgr->maxRelaysPerChannel = relays;
@@ -247,6 +267,7 @@ EXPORT int pc_check_port(const char* tracker, const char* channelId) {
         detail = "確認先がポート確認に対応していないか、配信が終了しています";
         throw GeneralException("Unexpected port check HTTP status");
       }
+      const bool busyTracker = std::string(line).find(" 503") != std::string::npos;
       bool headersComplete = false;
       for (int i = 0; i < 64; ++i) {
         readLine();
@@ -274,12 +295,48 @@ EXPORT int pc_check_port(const char* tracker, const char* channelId) {
         } else atom.skip(count, length);
       }
       if (sessionValid && external.globalIP() && external.port == servMgr->serverHost.port) {
+        // Publish the verified address/port to the core as well as the UI.
+        // The next outgoing PCP HELO uses getFirewall(), not portState.
+        // Leaving it UNKNOWN asks for another reverse probe without advertising
+        // our verified port, which can stall/reject the actual relay handshake.
+        {
+          std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+          servMgr->updateIPAddress(external.ip);
+          servMgr->setFirewall(4, ServMgr::FW_OFF);
+        }
         result = 1;
         detail.clear();
       } else {
         detail = portReceived && external.port == 0
           ? "確認先から逆接続できないと応答されました。iPhoneへのポート転送を確認してください"
           : "確認先から有効なポート確認結果を取得できませんでした";
+      }
+      // A relay-style port probe also consumes the tracker's referral list.
+      // YT throttles each advertised hit for 2 seconds; discarding these hosts
+      // makes the immediately following fetch see 1003 with no alternatives.
+      // Preserve only HOST suggestions after a verified 503 probe. Do not open
+      // media, process broadcasts/pushes, or let optional data invalidate OLEH.
+      if (result == 1 && busyTracker) {
+        try {
+          socket->setReadTimeout(1000);
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+          auto referrals = std::make_unique<PCPStream>(servMgr->sessionID);
+          BroadcastState state; state.chanID.fromStr(probeChannelId.c_str());
+          for (int i = 0; i < 16 && running && std::chrono::steady_clock::now() < deadline; ++i) {
+            if (!socket->readReady(200)) break;
+            int count, length;
+            const auto id = atom.read(count, length);
+            if (id != PCP_HOST || count < 0 || count > 64 || length != 0) break;
+            // Bound nested atoms/payload size using the core's packet buffer.
+            ChanPacket packet;
+            MemoryStream buffer(packet.data, sizeof(packet.data));
+            AtomStream encoded(buffer);
+            encoded.writeAtoms(id, *socket, count, length);
+            buffer.rewind();
+            encoded.read(count, length);
+            referrals->readHostAtoms(encoded, count, state);
+          }
+        } catch (...) { /* Referral delivery is best effort, not port proof. */ }
       }
       // OLEH is the result. A peer may close immediately afterwards (e.g.
       // an off-air or busy tracker). QUIT is best-effort cleanup and must
@@ -354,6 +411,7 @@ EXPORT const char* pc_snapshot() {
       }
       if (selected) { std::lock_guard<std::recursive_mutex> cg(selected->lock); j["playing"] = selected->isPlaying(); j["status"] = Channel::statusMsgs[selected->status]; }
     }
+    { std::lock_guard<std::mutex> g(connectionErrorMutex); j["connectionError"] = connectionError; }
     output = j.dump();
   } catch (...) { output = "{\"running\":false,\"status\":\"snapshot error\"}"; }
   return output.c_str();
