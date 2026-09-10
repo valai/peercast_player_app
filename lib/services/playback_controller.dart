@@ -74,6 +74,15 @@ class PlaybackController extends ChangeNotifier {
   late final StreamSubscription<PlayerLog>? logs;
   EngineSnapshot snapshot = const EngineSnapshot();
   String message = '停止中';
+  bool muted = false;
+
+  Future<void> toggleMute() async {
+    muted = !muted;
+    changed();
+    await androidVideo?.setVolume(muted ? 0 : 1);
+    await player?.setVolume(muted ? 0 : 100);
+  }
+
   bool active = false, opening = false;
   bool simulatorAudioUnavailable = false;
   bool _disposed = false;
@@ -206,6 +215,7 @@ class PlaybackController extends ChangeNotifier {
         });
         await output.initialize().timeout(const Duration(seconds: 30));
         if (_disposed || ticket != _generation) return;
+        await output.setVolume(muted ? 0 : 1);
         await output.play();
       } else {
         simulatorAudioUnavailable = await _audioSession.activate();
@@ -221,6 +231,7 @@ class PlaybackController extends ChangeNotifier {
           }
         }
         if (_disposed || ticket != _generation) return;
+        await player!.setVolume(muted ? 0 : 100);
         await player!
             .open(Media(uri.toString()))
             .timeout(const Duration(seconds: 30));

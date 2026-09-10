@@ -26,7 +26,6 @@ class _PortCheckScreenState extends State<PortCheckScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     listener.addListener(changed);
-    unawaited(listener.start());
   }
 
   void changed() {

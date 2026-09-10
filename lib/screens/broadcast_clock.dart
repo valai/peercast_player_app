@@ -27,7 +27,7 @@ class _BroadcastClockState extends State<BroadcastClock> {
 
   @override
   Widget build(BuildContext context) => Text(
-    widget.channel.broadcastDurationLabel(),
+    widget.channel.broadcastDurationLabel().replaceFirst('配信時間: ', ''),
     style: const TextStyle(color: Colors.white, fontSize: 12),
   );
 }

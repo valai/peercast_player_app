@@ -88,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
           const ListTile(
             title: Text('視聴・リレー'),
-            subtitle: Text('Wi-Fi接続とポート開放が必要です。視聴中は必ずリレーを行い、背景移行で停止します。'),
+            subtitle: Text('Wi-Fi接続とポート開放が必要です。視聴中は必ずリレーを行い、バックグラウンド移行で停止します。'),
           ),
           ListTile(
             title: const Text('下流の最大接続数'),
@@ -109,6 +109,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextFormField(
+              onTapOutside: (_) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
               initialValue: '${s.port}',
               decoration: const InputDecoration(
                 labelText: '待受ポート (1024–65535)',
@@ -187,11 +189,15 @@ class _SourceDialogState extends State<SourceDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextFormField(
+              onTapOutside: (_) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
               controller: name,
               decoration: const InputDecoration(labelText: '名前'),
               validator: (v) => (v ?? '').trim().isEmpty ? '名前を入力してください' : null,
             ),
             TextFormField(
+              onTapOutside: (_) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
               controller: url,
               decoration: const InputDecoration(
                 labelText: 'index.txt URL',
