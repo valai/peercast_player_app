@@ -61,6 +61,31 @@ void main() {
     );
     expect(EngineSnapshot.fromJson({}).portCheckError, isEmpty);
   });
+  test('受信タイムアウトに接続段階とコアのエラーを表示する', () {
+    final snapshot = EngineSnapshot.fromJson({
+      'status': 'CONNECT',
+      'connectionError': 'PCP readPacket: Read failed (1008)',
+    });
+    expect(snapshot.connectionTimeoutMessage, contains('中継先と接続処理中'));
+    expect(snapshot.connectionTimeoutMessage, contains('Read failed (1008)'));
+    expect(
+      const EngineSnapshot(status: 'SEARCH').connectionTimeoutMessage,
+      contains('中継先を探索中'),
+    );
+    expect(EngineSnapshot.fromJson({}).connectionError, isEmpty);
+    expect(
+      const EngineSnapshot().connectionTimeoutMessage,
+      isNot(contains('配信が終了しました')),
+    );
+  });
+  test('PCP 1003は配信終了ではなくリレー受付不可として案内する', () {
+    const snapshot = EngineSnapshot(
+      status: 'SEARCH',
+      connectionError: 'PCP readPacket: PCP exception (1003)',
+    );
+    expect(snapshot.connectionTimeoutMessage, contains('リレー受付不可'));
+    expect(snapshot.connectionTimeoutMessage, isNot(contains('配信終了')));
+  });
   test('旧設定のWi-Fi無効・リレー0を移行する', () async {
     await AppSettings.load();
     final prefs = await SharedPreferences.getInstance();

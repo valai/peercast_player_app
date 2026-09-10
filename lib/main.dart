@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -35,6 +36,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'PeerCast',
+    locale: const Locale('ja'),
+    supportedLocales: const [Locale('ja')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
     builder: (context, child) => KeyboardDismiss(child: child!),
     debugShowCheckedModeBanner: false,
     theme: ThemeData(

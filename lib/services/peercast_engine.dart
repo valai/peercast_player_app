@@ -17,6 +17,7 @@ class EngineSnapshot {
     this.firewall = 'unknown',
     this.status = 'stopped',
     this.portCheckError = '',
+    this.connectionError = '',
   });
   factory EngineSnapshot.fromJson(Map<String, dynamic> j) => EngineSnapshot(
     running: j['running'] == true,
@@ -27,10 +28,26 @@ class EngineSnapshot {
     firewall: j['firewall'] as String? ?? 'unknown',
     status: j['status'] as String? ?? 'stopped',
     portCheckError: j['portCheckError'] as String? ?? '',
+    connectionError: j['connectionError'] as String? ?? '',
   );
   final bool running, playing, listening;
   final int relays, bytesOut;
-  final String firewall, status, portCheckError;
+  final String firewall, status, portCheckError, connectionError;
+
+  String get connectionTimeoutMessage {
+    final stage = switch (status) {
+      'SEARCH' || 'NOHOSTS' => '接続可能な中継先を探索中',
+      'CONNECT' || 'REQUEST' => '中継先と接続処理中',
+      'ERROR' || 'IDLE' || 'WAIT' => '接続失敗後の待機中',
+      'NOTFOUND' => '接続先にチャンネルが見つかりません',
+      _ => '配信データの受信待ち',
+    };
+    final availability = connectionError.contains('PCP exception (1003)')
+        ? '\n接続先からリレー受付不可の応答がありました。時間をおいてお試しください。'
+        : '';
+    return '配信に接続できませんでした（$stage）$availability'
+        '${connectionError.isEmpty ? '' : '\n$connectionError'}';
+  }
 }
 
 abstract interface class EngineBackend {

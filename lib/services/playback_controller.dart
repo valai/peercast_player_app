@@ -14,6 +14,7 @@ import 'app_settings.dart';
 import 'peercast_engine.dart';
 import 'playback_audio_session.dart';
 import 'playback_tuning.dart';
+import 'playback_startup.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({
@@ -89,6 +90,7 @@ class PlaybackController extends ChangeNotifier {
   bool _disposed = false;
   int _generation = 0;
   Timer? timer;
+  PlaybackStartup? _startup;
   bool _polling = false;
   Future<void> _cleanup = Future.value();
   void changed() {
@@ -199,7 +201,7 @@ class PlaybackController extends ChangeNotifier {
           throw StateError('視聴エンジンを開始できませんでした。待受ポートを確認してください');
         }
         if (now().isAfter(deadline)) {
-          throw TimeoutException('配信に接続できませんでした');
+          throw TimeoutException(snapshot.connectionTimeoutMessage);
         }
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
@@ -230,9 +232,22 @@ class PlaybackController extends ChangeNotifier {
         }
         if (_disposed || ticket != _generation) return;
         await player!.setVolume(muted ? 0 : 100);
-        await player!
-            .open(Media(uri.toString()))
-            .timeout(const Duration(seconds: 30));
+        final startup = PlaybackStartup(player!.stream.position);
+        _startup = startup;
+        try {
+          // Subscribe before open: it completes when the load is queued, not
+          // when decoding starts. Wait for both, with errors observed together.
+          final results = await Future.wait<Object?>([
+            startup.ready,
+            player!
+                .open(Media(uri.toString()))
+                .timeout(const Duration(seconds: 30)),
+          ], eagerError: true);
+          if (results.first != true) return;
+        } finally {
+          startup.cancel();
+          if (identical(_startup, startup)) _startup = null;
+        }
       }
       if (_disposed || ticket != _generation) return;
       opening = false;
@@ -247,6 +262,8 @@ class PlaybackController extends ChangeNotifier {
 
   Future<void> stop({String message = '停止中'}) {
     ++_generation;
+    _startup?.cancel();
+    _startup = null;
     active = false;
     opening = false;
     timer?.cancel();

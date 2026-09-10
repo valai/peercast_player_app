@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../services/board_client.dart';
 import 'keyboard_dismiss.dart';
+import 'thread_post_text.dart';
+import 'thread_web_view.dart';
 import '../services/board_resolver.dart';
 
 class ThreadView extends StatefulWidget {
@@ -26,6 +28,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
   Timer? timer;
   BoardThread? thread;
   String? error;
+  Uri? openedUrl;
   Set<int> newPostNumbers = {};
   bool backgroundLoading = false;
   bool loading = false,
@@ -154,6 +157,39 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
     return true;
   }
 
+  Future<void> replyTo(int number) async {
+    if (sending) return;
+    final reply = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('レス $number'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('返信'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || reply != true || sending) return;
+    final prefix = '>>$number\n';
+    message.value = TextEditingValue(
+      text: prefix + message.text,
+      selection: TextSelection.collapsed(offset: prefix.length),
+    );
+    setState(() => composing = true);
+  }
+
+  void openUrl(Uri url) {
+    closeComposer();
+    scrollRequest++;
+    setState(() => openedUrl = url);
+  }
+
   void closeComposer() {
     if (!composing) return;
     FocusScope.of(context).unfocus();
@@ -203,7 +239,21 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      // Keep the thread and its scroll position mounted while browsing.
+      buildThread(context),
+      if (openedUrl != null)
+        ThreadWebView(
+          key: ValueKey(openedUrl),
+          url: openedUrl!,
+          onClose: () => setState(() => openedUrl = null),
+        ),
+    ],
+  );
+
+  Widget buildThread(BuildContext context) => ColoredBox(
     color: Theme.of(context).brightness == Brightness.dark
         ? const Color(0xFF242424)
         : const Color(0xFFF3F3F3),
@@ -373,15 +423,32 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                                 Text.rich(
                                                   TextSpan(
                                                     children: [
-                                                      TextSpan(
-                                                        text: '${post.number}',
-                                                        style: const TextStyle(
-                                                          color: Color(
-                                                            0xFF0000FF,
+                                                      WidgetSpan(
+                                                        alignment:
+                                                            PlaceholderAlignment
+                                                                .baseline,
+                                                        baseline: TextBaseline
+                                                            .alphabetic,
+                                                        child: InkWell(
+                                                          key: ValueKey(
+                                                            'reply-${post.number}',
                                                           ),
-                                                          decoration:
-                                                              TextDecoration
-                                                                  .underline,
+                                                          onTap: sending
+                                                              ? null
+                                                              : () => replyTo(
+                                                                  post.number,
+                                                                ),
+                                                          child: Text(
+                                                            '${post.number}',
+                                                            style: const TextStyle(
+                                                              color: Color(
+                                                                0xFF0000FF,
+                                                              ),
+                                                              decoration:
+                                                                  TextDecoration
+                                                                      .underline,
+                                                            ),
+                                                          ),
                                                         ),
                                                       ),
                                                       const TextSpan(
@@ -422,9 +489,10 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                                         left: 8,
                                                         top: 4,
                                                       ),
-                                                  child: SelectableText(
+                                                  child: ThreadPostText(
                                                     post.body,
                                                     onTap: closeComposer,
+                                                    onOpenUrl: openUrl,
                                                   ),
                                                 ),
                                               ],
