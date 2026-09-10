@@ -120,7 +120,12 @@ void main() {
     await tester.tap(find.byTooltip('書き込み'));
     await tester.pumpAndSettle();
     final fields = find.byType(TextField);
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isTrue,
+    );
     await tester.enterText(fields.at(1), 'test@example.com');
+    await tester.pump();
     await tester.ensureVisible(find.byType(CheckboxListTile));
     await tester.tap(find.byType(CheckboxListTile));
     await tester.pumpAndSettle();
@@ -152,6 +157,63 @@ void main() {
     await tester.tap(find.byTooltip('書き込み'));
     await tester.pumpAndSettle();
     expect(fields, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
+  testWidgets('書き込みボタンの表示・レススクロール維持・タップで閉じる', (tester) async {
+    final client = FakeBoardClient()..count = 30;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('書き込み'));
+    await tester.pumpAndSettle();
+    expect(find.text('書き込む').hitTestable(), findsOneWidget);
+    final list = find.byType(ListView);
+    final controller = tester.widget<ListView>(list).controller!;
+    final before = controller.offset;
+    await tester.drag(list, const Offset(0, 100));
+    await tester.pumpAndSettle();
+    expect(controller.offset, lessThan(before));
+    expect(find.byType(TextField), findsNWidgets(3));
+    await tester.tapAt(tester.getTopLeft(list) + const Offset(150, 30));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    client.dispose();
+  });
+  testWidgets('本文を再タップするとキーボードを閉じて下書きを保持する', (tester) async {
+    final client = FakeBoardClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ThreadView(target: target, client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('書き込み'));
+    await tester.pumpAndSettle();
+    final body = find.byType(TextField).last;
+    await tester.enterText(body, '下書き');
+    tester.view.viewInsets = FakeViewPadding(bottom: 200);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(body);
+    await tester.tap(body);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(tester.widget<TextField>(body).controller!.text, '下書き');
+    expect(find.byType(TextField), findsNWidgets(3));
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    await tester.tap(body);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
@@ -214,7 +276,6 @@ void main() {
     final bounds = tester.getRect(find.byType(ListView));
     for (var cycle = 0; cycle < 5; cycle++) {
       client.fail = cycle == 3;
-      if (cycle == 4) client.count = 501;
       client.pending = Completer<void>();
       await tester.pump(const Duration(seconds: 7));
       expect(controller.offset, offset);
@@ -230,7 +291,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     client.dispose();
   });
-  testWidgets('自動更新中と完了後にバーも読書位置のずれも発生しない', (tester) async {
+  testWidgets('オートスクロールOFFでは新着があっても読書位置を維持する', (tester) async {
     final client = FakeBoardClient()..count = 20;
     await tester.pumpWidget(
       MaterialApp(
@@ -242,6 +303,8 @@ void main() {
     await tester.pumpAndSettle();
     final list = find.byType(ListView);
     final controller = tester.widget<ListView>(list).controller!;
+    await tester.tap(find.text('オートスクロール'));
+    await tester.pumpAndSettle();
     controller.jumpTo(100);
     await tester.pumpAndSettle();
     final before = controller.offset;
@@ -264,6 +327,42 @@ void main() {
     client.dispose();
   });
 
+  for (final interact in [false, true]) {
+    testWidgets('自動更新の新着に追従する（事前操作: $interact）', (tester) async {
+      final client = FakeBoardClient()..count = 500;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(title: const Text('再生画面')),
+            body: ThreadView(target: target, client: client),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      if (interact) {
+        await tester.tap(find.text('再生画面'));
+        await tester.drag(list, const Offset(0, 300));
+        await tester.pumpAndSettle();
+        expect(controller.position.extentAfter, greaterThan(1));
+      }
+      expect(
+        tester.widget<FilterChip>(find.byType(FilterChip)).selected,
+        isTrue,
+      );
+      for (final count in [503, 506]) {
+        client.count = count;
+        await tester.pump(const Duration(seconds: 7));
+        await tester.pumpAndSettle();
+        expect(controller.position.extentAfter, lessThan(1));
+        expect(find.byKey(ValueKey(count)), findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+      }
+      await tester.pumpWidget(const SizedBox());
+      client.dispose();
+    });
+  }
   testWidgets('初回レスは強調せず新着だけ次回自動更新の開始まで薄青にする', (tester) async {
     final client = FakeBoardClient()..count = 2;
     await tester.pumpWidget(
@@ -358,6 +457,8 @@ void main() {
       BoardType.jpnkn,
     );
     expect(value.title, '題名');
+    expect(value.posts.first.mail, 'sage');
+    expect(value.posts.last.mail, '');
     expect(value.posts.first.body, '一行\n二行 <例>');
     expect(value.posts.last.number, 2);
   });
@@ -367,6 +468,8 @@ void main() {
       BoardType.shitaraba,
     );
     expect(value.posts.map((p) => p.number), [1, 3]);
+    expect(value.posts.first.mail, 'sage');
+    expect(value.posts.last.mail, '');
   });
   test('HTMLエラーをレスと扱わない', () {
     expect(
