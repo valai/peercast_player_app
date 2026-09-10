@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
   std::string state;
   for(int i=0;i<100;++i) { state=pc_snapshot(); if(state.find("reachable")!=std::string::npos || state.find("blocked")!=std::string::npos) break; std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
   peer.join(); close(listener); pc_stop();
+  require(state.find("\"listening\":true")!=std::string::npos,"listener readiness missing");
   printf("state: %s; peer: %s\n",state.c_str(),peerError.c_str());
   require(peerError.empty(),"reverse PCP exchange failed");
   const bool shouldPass = mode == "normal" || mode == "reset";

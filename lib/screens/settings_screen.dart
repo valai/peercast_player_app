@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
+import 'port_check_screen.dart';
 import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -132,6 +133,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text('リレーの可否は外部からの到達確認が必要です。待受ポートの設定だけではリレー可能になりません。'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.network_check),
+            title: const Text('SPでポート開放を確認'),
+            subtitle: Text('ポート ${s.port} で確認用の待受を開始します'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    PortCheckScreen(port: s.port, relays: s.maxRelays),
+              ),
+            ),
           ),
           ListTile(
             title: const Text('ライセンス'),

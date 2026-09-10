@@ -309,6 +309,11 @@ EXPORT const char* pc_snapshot() {
     if (running && servMgr) {
       {
       std::lock_guard<std::recursive_mutex> g(servMgr->lock);
+      j["listening"] = false;
+      for (auto s = servMgr->servents; s; s = s->next) {
+        std::lock_guard<std::recursive_mutex> sg(s->lock);
+        if (s->type == Servent::T_SERVER && s->status == Servent::S_LISTENING) j["listening"] = true;
+      }
       j["relays"] = servMgr->numStreams(Servent::T_RELAY, true);
       j["bytesOut"] = stats.getCurrent(Stats::BYTESOUT) - stats.getCurrent(Stats::LOCALBYTESOUT);
       {

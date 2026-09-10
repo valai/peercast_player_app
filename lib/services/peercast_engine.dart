@@ -10,6 +10,7 @@ import '../models/channel.dart';
 class EngineSnapshot {
   const EngineSnapshot({
     this.running = false,
+    this.listening = false,
     this.playing = false,
     this.relays = 0,
     this.bytesOut = 0,
@@ -19,6 +20,7 @@ class EngineSnapshot {
   });
   factory EngineSnapshot.fromJson(Map<String, dynamic> j) => EngineSnapshot(
     running: j['running'] == true,
+    listening: j['listening'] == true,
     playing: j['playing'] == true,
     relays: (j['relays'] as num?)?.toInt() ?? 0,
     bytesOut: (j['bytesOut'] as num?)?.toInt() ?? 0,
@@ -26,7 +28,7 @@ class EngineSnapshot {
     status: j['status'] as String? ?? 'stopped',
     portCheckError: j['portCheckError'] as String? ?? '',
   );
-  final bool running, playing;
+  final bool running, playing, listening;
   final int relays, bytesOut;
   final String firewall, status, portCheckError;
 }
@@ -39,9 +41,15 @@ abstract interface class EngineBackend {
   Future<void> stop();
 }
 
+abstract interface class PortListenerBackend {
+  Future<void> startListener(String directory, int port, int relays);
+  Future<EngineSnapshot> snapshot();
+  Future<void> stop();
+}
+
 // Each screen has an owner token. Late disposal of an old screen cannot stop
 // the new screen's core. Blocking FFI calls run only in the worker isolate.
-class PeerCastEngine implements EngineBackend {
+class PeerCastEngine implements EngineBackend, PortListenerBackend {
   final String owner =
       '${DateTime.now().microsecondsSinceEpoch}-${_nextOwner++}';
   static int _nextOwner = 0;
@@ -76,16 +84,19 @@ class PeerCastEngine implements EngineBackend {
     int relays,
   ) async {
     if (!channel.playable) throw StateError('FLV形式のチャンネルを選択してください');
+    await startListener(directory, port, relays);
+    return Uri.parse(
+      'http://127.0.0.1:$port/stream/${channel.id.toUpperCase()}.flv',
+    );
+  }
+
+  @override
+  Future<void> startListener(String directory, int port, int relays) async {
     await _call('start', {
       'directory': directory,
       'port': port,
       'relays': relays,
-      'id': channel.id,
-      'tracker': channel.tracker,
     });
-    return Uri.parse(
-      'http://127.0.0.1:$port/stream/${channel.id.toUpperCase()}.flv',
-    );
   }
 
   @override
