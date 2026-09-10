@@ -13,6 +13,7 @@ import '../models/channel.dart';
 import 'app_settings.dart';
 import 'peercast_engine.dart';
 import 'playback_audio_session.dart';
+import 'playback_tuning.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({
@@ -222,13 +223,10 @@ class PlaybackController extends ChangeNotifier {
         if (_disposed || ticket != _generation) return;
         final nativePlayer = player!.platform;
         if (nativePlayer is NativePlayer) {
-          await nativePlayer.setProperty('cache-on-disk', 'no');
-          if (simulatorAudioUnavailable) {
-            // The bundled simulator libmpv has no audio output driver.
-            // Explicit null output keeps video playing instead of emitting
-            // a fatal-looking audio error. Never mute physical devices.
-            await nativePlayer.setProperty('ao', 'null');
-          }
+          await configureNativePlayback(
+            nativePlayer.setProperty,
+            silentSimulator: simulatorAudioUnavailable,
+          );
         }
         if (_disposed || ticket != _generation) return;
         await player!.setVolume(muted ? 0 : 100);
