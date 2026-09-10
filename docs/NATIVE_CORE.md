@@ -70,7 +70,13 @@ https://github.com/media-kit/libmpv-android-video-build/tree/v1.1.7
 
 視聴・リレーにはWi-Fi接続と設定ポートの外部到達確認が必要です。
 `pc_start` は待受のみを開始します。`pc_check_port` は配信元トラッカーに
-PCPの逆接続確認を非同期で要求し、成功後に限り `pc_connect` を許可します。
+選択チャンネルへのHTTPハンドシェイク（`GET /channel/<id>` と `x-peercast-pcp: 1`）を
+経由してPCP HELOの`ping`で逆接続確認を非同期に要求し、成功後に限り `pc_connect` を許可します。
+HTTP 200と満員時の503に対応し、確認用接続はOLEH検証後にQUITで終了します。
+裸の `PCP_CONNECT` はPeerCastStationではSIDだけを返すPong用処理に入るため使用しません。
+ポート情報がない応答は「有効な結果なし」とし、明示的なポート0（逆接続失敗）と区別します。
+`pc_check_port(tracker, channelId)` の引数とDart FFIを同時に変更しているため、
+ホットリロードではなくネイティブライブラリを含めた再ビルドが必要です。
 未確認の間はチャンネル取得とリレーを開始しません。一覧・掲示板の閲覧は独立しています。
 IPv4の外部到達確認に対応しており、確認に対応しない配信元やIPv6のみの場合も視聴を許可しません。
 
@@ -88,9 +94,11 @@ PCP OLEHのセッションID・外部IP・ポートを検証した後のQUIT送�
 実際に確認した待受ポート番号とともに表示します。
 
 `PEERCAST_PORT_CHECK_TEST=ON` で `port_check_test` をビルドできます。
-Android端末上で通常実行と `reset`・`blocked`・`invalid` 引数をそれぞれ実行すると、
-本物のTCP逆接続とPCPセッション照合を使って、正常応答、応答直後の切断、
-逆接続失敗の応答、不正なセッションIDの判定を検証します。
+macOSまたはAndroid端末上で `normal`・`busy`・`reset`・`blocked`・`invalid`・
+`missing`・`wrong_port` 引数をそれぞれ実行すると、HTTPからのPCP移行、指定ポートへの
+逆接続要求、TCP逆接続とセッション照合、503応答、終了時の切断、失敗応答、
+不正SID、ポート情報の欠落・不一致を検証します。
+設定画面のSP Passは保存して再利用せず、再生するセッションで新しく確認します。
 
 
 ### 設定画面からのSP確認

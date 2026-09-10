@@ -12,6 +12,7 @@ import 'package:peercast_app/services/playback_controller.dart';
 
 class FakeEngine implements EngineBackend {
   int starts = 0, connects = 0, checks = 0;
+  Channel? checkedChannel;
   bool running = false;
   String firewall = 'unknown';
   @override
@@ -33,7 +34,8 @@ class FakeEngine implements EngineBackend {
   }
 
   @override
-  Future<void> checkPort(String tracker) async {
+  Future<void> checkPort(Channel channel) async {
+    checkedChannel = channel;
     checks++;
   }
 
@@ -122,6 +124,7 @@ void main() {
       }
       final starting = controller.start(channel);
       await tester.pump();
+      if (scenario != 'mobile') expect(engine.checkedChannel, same(channel));
       if (scenario == 'mobile') {
         expect(engine.starts, 0);
         expect(controller.active, false);

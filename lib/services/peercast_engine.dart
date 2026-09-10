@@ -37,7 +37,7 @@ abstract interface class EngineBackend {
   Future<Uri> start(Channel channel, String directory, int port, int relays);
   Future<EngineSnapshot> snapshot();
   Future<void> connect(Channel channel);
-  Future<void> checkPort(String tracker);
+  Future<void> checkPort(Channel channel);
   Future<void> stop();
 }
 
@@ -109,8 +109,8 @@ class PeerCastEngine implements EngineBackend, PortListenerBackend {
   }
 
   @override
-  Future<void> checkPort(String tracker) async {
-    await _call('checkPort', {'tracker': tracker});
+  Future<void> checkPort(Channel channel) async {
+    await _call('checkPort', {'tracker': channel.tracker, 'id': channel.id});
   }
 
   @override
@@ -141,8 +141,8 @@ void _engineWorker(SendPort ready) {
     );
     final checkPort = library
         .lookupFunction<
-          Int32 Function(Pointer<Utf8>),
-          int Function(Pointer<Utf8>)
+          Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
+          int Function(Pointer<Utf8>, Pointer<Utf8>)
         >('pc_check_port');
     final error = library
         .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
@@ -190,10 +190,12 @@ void _engineWorker(SendPort ready) {
                 calloc.free(tracker);
               }
             case 'checkPort':
+              final id = (m['id'] as String).toNativeUtf8();
               final tracker = (m['tracker'] as String).toNativeUtf8();
               try {
-                check(checkPort(tracker));
+                check(checkPort(tracker, id));
               } finally {
+                calloc.free(id);
                 calloc.free(tracker);
               }
             case 'snapshot':

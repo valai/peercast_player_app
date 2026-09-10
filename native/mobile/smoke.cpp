@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 extern "C" int pc_start(const char*,int,int);
-extern "C" int pc_check_port(const char*);
+extern "C" int pc_check_port(const char*,const char*);
 extern "C" int pc_connect(const char*,const char*);
 extern "C" int pc_stop();
 extern "C" int pc_set_relays(int);
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     if (pc_start("/data/local/tmp", port, 1) != 0) { puts(pc_error()); return 1; }
     if (pc_connect(id, tracker) == 0) { puts("FAIL: connected without port verification"); pc_stop(); return 2; }
     if (argc > 1) {
-      if (pc_check_port(tracker) != 0) { puts(pc_error()); pc_stop(); return 2; }
+      if (pc_check_port(tracker,id) != 0) { puts(pc_error()); pc_stop(); return 2; }
       bool reachable = false;
       for (int i=0; i<35; ++i) {
         const std::string state = pc_snapshot();

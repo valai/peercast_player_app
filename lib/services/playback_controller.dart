@@ -118,7 +118,7 @@ class PlaybackController extends ChangeNotifier {
       if (_disposed || ticket != _generation) return;
       message = 'ポート $port の開放を確認中…';
       changed();
-      await engine.checkPort(channel.tracker);
+      await engine.checkPort(channel);
       final portDeadline = now().add(const Duration(seconds: 35));
       while (true) {
         if (_disposed || ticket != _generation) return;
@@ -167,7 +167,7 @@ class PlaybackController extends ChangeNotifier {
           }
           if (now().difference(lastPortCheck).inSeconds >= 15) {
             lastPortCheck = now();
-            await engine.checkPort(channel.tracker);
+            await engine.checkPort(channel);
           }
           changed();
         } catch (e) {

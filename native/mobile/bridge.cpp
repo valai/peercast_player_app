@@ -31,7 +31,7 @@ std::chrono::steady_clock::time_point portCheckStarted;
 std::mutex probeMutex;
 std::shared_ptr<ClientSocket> probeSocket;
 ThreadInfo probeThread;
-std::string probeTracker, portCheckError;
+std::string probeTracker, probeChannelId, portCheckError;
 
 class MobileSys final : public USys {
  public:
@@ -184,10 +184,13 @@ EXPORT int pc_start(const char* path, int port, int relays) {
     catch (...) { pc_stop(); return fail("Native initialization failed"); }
 }
 // Probe without starting a channel. Keep the socket interruptible by pc_stop.
-EXPORT int pc_check_port(const char* tracker) {
+EXPORT int pc_check_port(const char* tracker, const char* channelId) {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
   if (!running) return fail("Inactive engine");
+  if (!channelId || !std::regex_match(channelId, std::regex("[A-Fa-f0-9]{32}")))
+    return fail("Invalid port check channel");
   if (checkingPort) return 0;
+  probeChannelId = channelId;
   probeTracker = tracker;
   portCheckStarted = std::chrono::steady_clock::now();
   checkingPort = true;
@@ -228,7 +231,28 @@ EXPORT int pc_check_port(const char* tracker) {
       }
       socket->connect();
       AtomStream atom(*socket);
-      atom.writeInt(PCP_CONNECT, 1);
+      // A bare PCP_CONNECT reaches PeerCastStation's pong-only handler,
+      // which returns just a session ID and does not perform a reverse probe.
+      // Use the relay handshake (200 or full/busy 503) on both YT and Station.
+      socket->writeLineF("GET /channel/%s HTTP/1.0", probeChannelId.c_str());
+      socket->writeLine("x-peercast-pcp: 1");
+      socket->writeLine("");
+      char line[4096];
+      auto readLine = [&] {
+        if (socket->readLine(line, sizeof(line)) >= static_cast<int>(sizeof(line) - 1))
+          throw GeneralException("Port check HTTP header too long");
+      };
+      readLine();
+      if (!std::regex_match(line, std::regex("HTTP/1\\.[01] (200|503)( .*)?"))) {
+        detail = "確認先がポート確認に対応していないか、配信が終了しています";
+        throw GeneralException("Unexpected port check HTTP status");
+      }
+      bool headersComplete = false;
+      for (int i = 0; i < 64; ++i) {
+        readLine();
+        if (!line[0]) { headersComplete = true; break; }
+      }
+      if (!headersComplete) throw GeneralException("Too many port check HTTP headers");
       // Always request a fresh reverse connection to the configured port.
       Servent::writeHeloAtom(atom, false, true, false, servMgr->sessionID,
                             servMgr->serverHost.port, chanMgr->broadcastID);
@@ -236,11 +260,13 @@ EXPORT int pc_check_port(const char* tracker) {
       if (atom.read(children, bytes) != PCP_OLEH || children < 0 || children > 64)
         throw GeneralException("Invalid port check response");
       Host external;
-      bool sessionValid = false;
+      bool sessionValid = false, portReceived = false;
       for (int i = 0; i < children; ++i) {
         int count, length;
         auto id = atom.read(count, length);
-        if (id == PCP_HELO_PORT) external.port = atom.readShort();
+        if (id == PCP_HELO_PORT && count == 0 && length == 2) {
+          external.port = atom.readShort(); portReceived = true;
+        }
         else if (id == PCP_HELO_REMOTEIP) external.ip = atom.readAddress();
         else if (id == PCP_HELO_SESSIONID && length == 16) {
           GnuID remote; atom.readBytes(remote.id, 16);
@@ -251,7 +277,7 @@ EXPORT int pc_check_port(const char* tracker) {
         result = 1;
         detail.clear();
       } else {
-        detail = external.port == 0
+        detail = portReceived && external.port == 0
           ? "確認先から逆接続できないと応答されました。iPhoneへのポート転送を確認してください"
           : "確認先から有効なポート確認結果を取得できませんでした";
       }
