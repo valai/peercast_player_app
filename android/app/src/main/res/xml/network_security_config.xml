@@ -2,12 +2,12 @@
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
-        <domain>bayonet.ddo.jp</domain>
-        <domain>bbs.jpnkn.com</domain>
-        <domain>www.dmdbs.net</domain>
-        <domain>jbbs.shitaraba.net</domain>
-        <domain>jbbs.livedoor.jp</domain>
-        <domain>127.0.0.1</domain>
-        <domain>localhost</domain>
+        <domain includeSubdomains="false">bayonet.ddo.jp</domain>
+        <domain includeSubdomains="false">bbs.jpnkn.com</domain>
+        <domain includeSubdomains="false">www.dmdbs.net</domain>
+        <domain includeSubdomains="false">jbbs.shitaraba.net</domain>
+        <domain includeSubdomains="false">jbbs.livedoor.jp</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>

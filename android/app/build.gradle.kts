@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -31,11 +40,24 @@ android {
     }
 
     externalNativeBuild { cmake { path = file("../../native/mobile/CMakeLists.txt"); version = "3.22.1" } }
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                fun requiredProperty(name: String): String =
+                    keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+                        ?: throw GradleException("Missing $name in android/key.properties")
+                storeFile = file(requiredProperty("storeFile"))
+                storePassword = requiredProperty("storePassword")
+                keyAlias = requiredProperty("keyAlias")
+                keyPassword = requiredProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Distribution builds must use the private release key.
+            // Configure android/key.properties before building a release.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -48,4 +70,13 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// Allow debug builds without local signing secrets, but never emit an unsigned release.
+gradle.taskGraph.whenReady {
+    if (!keystorePropertiesFile.exists() && allTasks.any {
+        it.project == project && it.name.contains("Release", ignoreCase = true)
+    }) {
+        throw GradleException("Release signing requires android/key.properties. See docs/DEVELOPMENT.md.")
+    }
 }

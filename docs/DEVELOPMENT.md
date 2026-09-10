@@ -103,3 +103,25 @@ YP一覧・設定・掲示板と直接視聴・リレーを実装した開発版
 - 検証用エミュレーターは一時的に `-gpu swiftshader -no-snapshot-load -no-snapshot-save` で起動しています。AVDの保存設定は変更していません。
 - エミュレーターの容量不足時は `flutter build apk --debug --split-per-abi --target-platform android-x64` で生成するapp-x86_64-debug.apkを利用できます。
 - 通常APKの保存コピー: `build/peercast-debug.apk`。最新の検証範囲はNATIVE_CORE.mdを参照。
+### 配布用release APKの作成
+
+プロジェクトルートで実行します。
+
+```powershell
+./scripts/flutter.ps1 build apk --release
+```
+
+生成先: `build/app/outputs/flutter-apk/app-release.apk`
+
+署名には `android/app/peercast-release.jks` と `android/key.properties` を使います。
+どちらもGit対象外です。パスワードは `key.properties` に保存されています。
+この2ファイルは安全な別の場所にもバックアップし、公開・共有しないでください。
+更新版は同じ署名鍵で作成する必要があります。鍵を再生成しないでください。
+別のPCではこの2ファイルを同じ場所に復元してください。
+設定の書式は `android/key.properties.example` を参照してください。
+`storeFile` の相対パスは `android/app` を基準に解決します。
+署名設定がない場合、releaseビルドは失敗します。debugビルドには不要です。
+
+既存のデバッグ署名版には上書きインストールできません。
+配布版への切り替え時は必要なデータを退避してから旧版をアンインストールしてください。
+アンインストールするとアプリ内の保存データが削除されます。
