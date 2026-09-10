@@ -32,7 +32,8 @@ class EngineSnapshot {
 abstract interface class EngineBackend {
   Future<Uri> start(Channel channel, String directory, int port, int relays);
   Future<EngineSnapshot> snapshot();
-  Future<void> setRelays(int count);
+  Future<void> connect(Channel channel);
+  Future<void> checkPort(String tracker);
   Future<void> stop();
 }
 
@@ -90,8 +91,13 @@ class PeerCastEngine implements EngineBackend {
     Map<String, dynamic>.from(await _call('snapshot') as Map),
   );
   @override
-  Future<void> setRelays(int count) async {
-    await _call('relays', {'count': count});
+  Future<void> connect(Channel channel) async {
+    await _call('connect', {'id': channel.id, 'tracker': channel.tracker});
+  }
+
+  @override
+  Future<void> checkPort(String tracker) async {
+    await _call('checkPort', {'tracker': tracker});
   }
 
   @override
@@ -120,10 +126,11 @@ void _engineWorker(SendPort ready) {
     final stop = library.lookupFunction<Int32 Function(), int Function()>(
       'pc_stop',
     );
-    final relays = library
-        .lookupFunction<Int32 Function(Int32), int Function(int)>(
-          'pc_set_relays',
-        );
+    final checkPort = library
+        .lookupFunction<
+          Int32 Function(Pointer<Utf8>),
+          int Function(Pointer<Utf8>)
+        >('pc_check_port');
     final error = library
         .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
           'pc_error',
@@ -146,27 +153,36 @@ void _engineWorker(SendPort ready) {
         dynamic value;
         if (m['op'] == 'start') {
           final path = (m['directory'] as String).toNativeUtf8();
-          final id = (m['id'] as String).toNativeUtf8();
-          final tracker = (m['tracker'] as String).toNativeUtf8();
           try {
             check(start(path, m['port'] as int, m['relays'] as int));
             owner = m['owner'] as String;
-            check(connect(id, tracker));
           } catch (_) {
             stop();
             rethrow;
           } finally {
             calloc.free(path);
-            calloc.free(id);
-            calloc.free(tracker);
           }
         } else if (owner == m['owner']) {
           switch (m['op']) {
             case 'stop':
               check(stop());
               owner = null;
-            case 'relays':
-              check(relays(m['count'] as int));
+            case 'connect':
+              final id = (m['id'] as String).toNativeUtf8();
+              final tracker = (m['tracker'] as String).toNativeUtf8();
+              try {
+                check(connect(id, tracker));
+              } finally {
+                calloc.free(id);
+                calloc.free(tracker);
+              }
+            case 'checkPort':
+              final tracker = (m['tracker'] as String).toNativeUtf8();
+              try {
+                check(checkPort(tracker));
+              } finally {
+                calloc.free(tracker);
+              }
             case 'snapshot':
               value = jsonDecode(snapshot().toDartString());
           }

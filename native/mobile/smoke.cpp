@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 extern "C" int pc_start(const char*,int,int);
+extern "C" int pc_check_port(const char*);
 extern "C" int pc_connect(const char*,const char*);
 extern "C" int pc_stop();
 extern "C" int pc_set_relays(int);
@@ -21,7 +22,18 @@ int main(int argc, char** argv) {
   bool received = false;
   for (int cycle=0; cycle<(argc > 1 ? 1 : 2); ++cycle) {
     if (pc_start("/data/local/tmp", port, 1) != 0) { puts(pc_error()); return 1; }
-    if (pc_connect(id, tracker) != 0) { puts(pc_error()); return 2; }
+    if (pc_connect(id, tracker) == 0) { puts("FAIL: connected without port verification"); pc_stop(); return 2; }
+    if (argc > 1) {
+      if (pc_check_port(tracker) != 0) { puts(pc_error()); pc_stop(); return 2; }
+      bool reachable = false;
+      for (int i=0; i<35; ++i) {
+        const std::string state = pc_snapshot();
+        if (state.find("reachable") != std::string::npos) { reachable = true; break; }
+        if (state.find("blocked") != std::string::npos) break;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+      if (!reachable || pc_connect(id, tracker) != 0) { puts("FAIL: port verification or connection failed"); pc_stop(); return 2; }
+    }
     std::this_thread::sleep_for(std::chrono::seconds(2));
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     timeval tv{3,0}; setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
@@ -46,14 +58,8 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     puts(pc_snapshot());
-    if(pc_set_relays(0)!=0) return 5;
-    int denied=socket(AF_INET,SOCK_STREAM,0); setsockopt(denied,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
-    if(connect(denied,(sockaddr*)&addr,sizeof(addr))!=0) return 9;
-    auto relayRequest=std::string("GET /channel/")+id+" HTTP/1.0\r\n\r\n";
-    send(denied,relayRequest.data(),relayRequest.size(),0);
-    char denial[256]{}; recv(denied,denial,255,0); close(denied);
-    if(strstr(denial,"403")==nullptr) { puts("FAIL: relay accepted while disabled"); pc_stop(); return 10; }
-    puts("PASS: disabled relay rejects new connections");
+    if(pc_set_relays(0)==0) { puts("FAIL: zero relay limit accepted"); pc_stop(); return 5; }
+    puts("PASS: relay cannot be disabled");
     if(pc_stop()!=0) { puts(pc_error()); return 6; }
     puts(pc_snapshot());
     int probe=socket(AF_INET,SOCK_STREAM,0);
@@ -61,6 +67,6 @@ int main(int argc, char** argv) {
     if(connected==0) { puts("listener leaked after stop"); return 7; }
   }
   if (argc > 1 && !received) { puts("FAIL: no FLV reception"); return 8; }
-  puts("PASS: restart, management rejection, relay stop, listener shutdown"); return 0;
+  puts("PASS: restart, management rejection, mandatory relay, listener shutdown"); return 0;
 }
 

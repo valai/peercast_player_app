@@ -13,8 +13,9 @@ class AppSettings extends ChangeNotifier {
   Set<String> favorites = {};
   List<Channel> history = [];
   Map<String, String> threads = {};
-  bool wifiOnly = true;
-  int maxRelays = 1;
+  int _maxRelays = 1;
+  int get maxRelays => _maxRelays;
+  set maxRelays(int value) => _maxRelays = value.clamp(1, 16);
   int port = 7145;
   String? loadError;
   static Future<AppSettings> load() async {
@@ -31,8 +32,7 @@ class AppSettings extends ChangeNotifier {
             .map((v) => Channel.fromJson(v as Map<String, dynamic>))
             .toList();
         settings.threads = Map<String, String>.from(j['threads'] as Map);
-        settings.wifiOnly = j['wifiOnly'] as bool;
-        settings.maxRelays = (j['maxRelays'] as int).clamp(0, 16);
+        settings.maxRelays = (j['maxRelays'] as int).clamp(1, 16);
         settings.port = (j['port'] as int).clamp(1024, 65535);
       } catch (_) {
         settings.sources = [];
@@ -52,7 +52,6 @@ class AppSettings extends ChangeNotifier {
         'favorites': favorites.toList(),
         'history': history.map((c) => c.toJson()).toList(),
         'threads': threads,
-        'wifiOnly': wifiOnly,
         'maxRelays': maxRelays,
         'port': port,
       }),

@@ -128,7 +128,6 @@ void main() {
     await s.remember(c);
     await s.remember(c);
     s.threads[c.key] = c.contact;
-    s.wifiOnly = false;
     s.maxRelays = 2;
     s.port = 17144;
     await s.save();
@@ -138,7 +137,6 @@ void main() {
     expect(restored.threads[c.key], c.contact);
     expect(restored.port, 17144);
     expect(restored.maxRelays, 2);
-    expect(restored.wifiOnly, false);
   });
   test('破損した保存データに初期YPを再挿入しない', () async {
     SharedPreferences.setMockInitialValues({AppSettings.storageKey: '{broken'});
