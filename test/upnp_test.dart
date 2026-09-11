@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -38,6 +39,52 @@ String mapping({
     '<NewLeaseDuration>$lease</NewLeaseDuration>';
 
 void main() {
+  test(
+    'iOS blocks discovery, opening and removal before network access',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      var discoveries = 0;
+      final service = UpnpService(
+        discover: () async {
+          discoveries++;
+          return [gateway];
+        },
+      );
+      addTearDown(service.dispose);
+      expect(UpnpService.isSupported, isFalse);
+      for (final operation in [
+        service.discover,
+        () => service.open(7145),
+        () => service.remove(7145),
+      ]) {
+        await expectLater(operation(), throwsA(isA<UpnpException>()));
+      }
+      expect(discoveries, 0);
+    },
+  );
+
+  test('Android keeps UPnP enabled', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    expect(UpnpService.isSupported, isTrue);
+  });
+
+  testWidgets('iOS disables both UPnP buttons', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: UpnpScreen(port: 7145, relays: 2)),
+    );
+    expect(find.text(UpnpService.unavailableMessage), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+    expect(
+      tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+      isNull,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   test('SSDP headers ignore case and reject unrelated locations', () {
     final sender = InternetAddress('192.168.1.1');
     expect(

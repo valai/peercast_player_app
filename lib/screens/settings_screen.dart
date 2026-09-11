@@ -4,6 +4,7 @@ import '../models/channel.dart';
 import 'port_check_screen.dart';
 import 'upnp_screen.dart';
 import '../services/app_settings.dart';
+import '../services/upnp_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.settings});
@@ -164,12 +165,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text('リレーの可否は外部からの到達確認が必要です。待受ポートの設定だけではリレー可能になりません。'),
           ),
           ListTile(
-            enabled: portValid,
+            enabled: portValid && UpnpService.isSupported,
             leading: const Icon(Icons.router),
             title: const Text('UPnPで自動ポート開放'),
-            subtitle: Text('ルーターを検出してTCP ${s.port} を開放・削除します'),
+            subtitle: Text(
+              UpnpService.isSupported
+                  ? 'ルーターを検出してTCP ${s.port} を開放・削除します'
+                  : UpnpService.unavailableMessage,
+            ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: !portValid
+            onTap: !portValid || !UpnpService.isSupported
                 ? null
                 : () => Navigator.push(
                     context,

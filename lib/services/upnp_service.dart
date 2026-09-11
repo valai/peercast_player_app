@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
@@ -36,6 +37,11 @@ class UpnpService {
        _discoverOverride = discover;
   final http.Client _client;
   final Future<List<UpnpGateway>> Function()? _discoverOverride;
+  // Restore only together with iOS signing entitlements; see docs/ios-upnp.md.
+  static bool get isSupported => defaultTargetPlatform != TargetPlatform.iOS;
+  static const unavailableMessage =
+      'iOSではUPnPによる自動ポート開放を一時的に無効にしています。ルーターで手動設定してください。';
+
   static const description = 'PeerCast App';
   static const timeout = Duration(seconds: 5);
   void dispose() => _client.close();
@@ -90,6 +96,7 @@ class UpnpService {
   }
 
   Future<List<UpnpGateway>> discover() async {
+    if (!isSupported) throw const UpnpException(unavailableMessage);
     if (_discoverOverride != null) return _discoverOverride();
     final locations = <Uri>{};
     final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);

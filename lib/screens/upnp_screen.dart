@@ -28,7 +28,7 @@ class _UpnpScreenState extends State<UpnpScreen> {
   String message = 'Wi-Fiルーターを自動検出し、この端末へのTCPポート転送を設定します。';
 
   Future<void> run({required bool remove}) async {
-    if (busy) return;
+    if (busy || !UpnpService.isSupported) return;
     setState(() {
       busy = true;
       message =
@@ -89,16 +89,27 @@ class _UpnpScreenState extends State<UpnpScreen> {
           const SizedBox(height: 16),
           if (busy) const LinearProgressIndicator(),
           const SizedBox(height: 12),
-          Semantics(liveRegion: true, child: Text(message)),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              UpnpService.isSupported
+                  ? message
+                  : UpnpService.unavailableMessage,
+            ),
+          ),
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: busy ? null : () => run(remove: false),
+            onPressed: busy || !UpnpService.isSupported
+                ? null
+                : () => run(remove: false),
             icon: const Icon(Icons.router),
             label: const Text('自動でポートを開放'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: busy ? null : () => run(remove: true),
+            onPressed: busy || !UpnpService.isSupported
+                ? null
+                : () => run(remove: true),
             icon: const Icon(Icons.link_off),
             label: const Text('このポートの転送を削除'),
           ),
