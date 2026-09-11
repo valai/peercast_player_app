@@ -106,6 +106,8 @@ void main() {
     );
   });
   for (final scenario in [
+    'emulatorBlocked',
+    'emulatorUnknown',
     'mobile',
     'blocked',
     'unknown',
@@ -127,6 +129,7 @@ void main() {
       final changes = StreamController<List<ConnectivityResult>>();
       final controller = PlaybackController(
         settings: settings,
+        emulatorCheck: () async => scenario.startsWith("emulator"),
         now: tester.binding.clock.now,
         engine: engine,
         connectivityCheck: () async => links,
@@ -143,14 +146,28 @@ void main() {
         fields.join('<>'),
         YellowPage.defaults.first,
       ).single;
-      if (scenario == 'blocked') engine.firewall = 'blocked';
+      if (scenario == 'blocked' || scenario == 'emulatorBlocked') {
+        engine.firewall = 'blocked';
+      }
       if (scenario == 'lostPort' || scenario == 'lostWifi') {
         engine.firewall = 'reachable';
       }
       final starting = controller.start(channel);
       await tester.pump();
-      if (scenario != 'mobile') expect(engine.checkedChannel, same(channel));
-      if (scenario == 'mobile') {
+      if (scenario != 'mobile' && !scenario.startsWith('emulator')) {
+        expect(engine.checkedChannel, same(channel));
+      }
+      if (scenario.startsWith('emulator')) {
+        expect(engine.connects, 1);
+        expect(engine.checks, 0);
+        expect(controller.active, true);
+        await tester.pump(const Duration(seconds: 16));
+        expect(controller.active, true);
+        expect(engine.checks, 0);
+        engine.running = false;
+        await tester.pump(const Duration(seconds: 1));
+        expect(controller.active, false);
+      } else if (scenario == 'mobile') {
         expect(engine.starts, 0);
         expect(controller.active, false);
       } else if (scenario == 'blocked') {

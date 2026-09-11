@@ -4,6 +4,7 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var runtimeChannel: FlutterMethodChannel?
   private var playbackAudioChannel: FlutterMethodChannel?
 
   override func application(
@@ -15,6 +16,22 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let runtime = FlutterMethodChannel(
+      name: "peercast_app/runtime",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    runtimeChannel = runtime
+    runtime.setMethodCallHandler { call, result in
+      guard call.method == "isEmulator" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      #if targetEnvironment(simulator)
+      result(true)
+      #else
+      result(false)
+      #endif
+    }
     let channel = FlutterMethodChannel(
       name: "peercast_app/playback_audio",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
