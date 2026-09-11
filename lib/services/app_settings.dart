@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/channel.dart';
@@ -17,6 +17,7 @@ class AppSettings extends ChangeNotifier {
   int get maxRelays => _maxRelays;
   set maxRelays(int value) => _maxRelays = value.clamp(1, 16);
   int port = 7145;
+  ThemeMode themeMode = ThemeMode.system;
   String? loadError;
   static Future<AppSettings> load() async {
     final settings = AppSettings(await SharedPreferences.getInstance());
@@ -33,6 +34,10 @@ class AppSettings extends ChangeNotifier {
             .toList();
         settings.threads = Map<String, String>.from(j['threads'] as Map);
         settings.maxRelays = (j['maxRelays'] as int).clamp(1, 16);
+        settings.themeMode = ThemeMode.values.firstWhere(
+          (mode) => mode.name == j['themeMode'],
+          orElse: () => ThemeMode.system,
+        );
         settings.port = (j['port'] as int).clamp(1024, 65535);
       } catch (_) {
         settings.sources = [];
@@ -54,6 +59,7 @@ class AppSettings extends ChangeNotifier {
         'threads': threads,
         'maxRelays': maxRelays,
         'port': port,
+        'themeMode': themeMode.name,
       }),
     );
     if (!ok) throw StateError('設定を保存できませんでした');
