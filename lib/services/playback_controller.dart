@@ -27,6 +27,7 @@ class PlaybackController extends ChangeNotifier {
     Player? Function()? playerFactory,
     DateTime Function()? now,
     Future<bool> Function()? emulatorCheck,
+    this.androidVideoFactory,
   }) : isEmulator = emulatorCheck ?? RuntimeEnvironment.isEmulator,
        now = now ?? DateTime.now,
        engine = engine ?? PeerCastEngine(),
@@ -74,7 +75,11 @@ class PlaybackController extends ChangeNotifier {
   final Future<List<ConnectivityResult>> Function() checkConnectivity;
   final Future<Directory> Function() supportDirectory;
   late final VideoController video = VideoController(player!);
+  final VideoPlayerController Function(Uri)? androidVideoFactory;
   VideoPlayerController? androidVideo;
+  bool _recoveringVideo = false;
+  int _videoRetries = 0;
+  DateTime? _videoStartedAt;
   late final StreamSubscription<List<ConnectivityResult>> network;
   late final StreamSubscription<String>? errors;
   late final StreamSubscription<PlayerLog>? logs;
@@ -216,20 +221,8 @@ class PlaybackController extends ChangeNotifier {
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
       if (_disposed || ticket != _generation) return;
-      if (Platform.isAndroid) {
-        final output = VideoPlayerController.networkUrl(uri);
-        androidVideo = output;
-        output.addListener(() {
-          if (active && ticket == _generation && output.value.hasError) {
-            unawaited(
-              stop(message: '再生できませんでした: ${output.value.errorDescription}'),
-            );
-          }
-        });
-        await output.initialize().timeout(const Duration(seconds: 30));
-        if (_disposed || ticket != _generation) return;
-        await output.setVolume(muted ? 0 : 1);
-        await output.play();
+      if (Platform.isAndroid || androidVideoFactory != null) {
+        await _openAndroidVideo(uri, ticket);
       } else {
         simulatorAudioUnavailable = await _audioSession.activate();
         if (_disposed || ticket != _generation) return;
@@ -270,8 +263,84 @@ class PlaybackController extends ChangeNotifier {
     }
   }
 
+  bool _isCurrent(int ticket) => !_disposed && active && ticket == _generation;
+
+  Future<void> _openAndroidVideo(Uri uri, int ticket) async {
+    final previous = androidVideo;
+    androidVideo = null;
+    changed();
+    await previous?.dispose();
+    if (!_isCurrent(ticket)) return;
+    final output =
+        androidVideoFactory?.call(uri) ?? VideoPlayerController.networkUrl(uri);
+    androidVideo = output;
+    var ready = false;
+    output.addListener(() {
+      // Initialization errors are handled by the awaiting caller. Ignore
+      // notifications from players replaced during recovery or channel changes.
+      if (ready &&
+          _isCurrent(ticket) &&
+          identical(androidVideo, output) &&
+          output.value.hasError) {
+        unawaited(
+          _recoverAndroidVideo(uri, ticket, output.value.errorDescription),
+        );
+      }
+    });
+    await output.initialize().timeout(const Duration(seconds: 30));
+    if (!_isCurrent(ticket)) return;
+    await output.setVolume(muted ? 0 : 1);
+    if (!_isCurrent(ticket)) return;
+    await output.play();
+    if (!_isCurrent(ticket)) return;
+    if (output.value.hasError) {
+      throw StateError(output.value.errorDescription ?? '動画再生エラー');
+    }
+    _videoStartedAt = now();
+    ready = true;
+  }
+
+  Future<void> _recoverAndroidVideo(Uri uri, int ticket, String? error) async {
+    if (!_isCurrent(ticket) || _recoveringVideo) return;
+    _recoveringVideo = true;
+    // A short-lived successful initialize must not allow an infinite retry loop.
+    if (_videoStartedAt != null &&
+        now().difference(_videoStartedAt!) >= const Duration(minutes: 2)) {
+      _videoRetries = 0;
+    }
+    opening = true;
+    try {
+      while (_isCurrent(ticket) && _videoRetries < 3) {
+        final attempt = ++_videoRetries;
+        debugPrint('Android playback recovery $attempt/3: $error');
+        message = '再生が途切れたため再接続中…（$attempt/3）';
+        changed();
+        await Future<void>.delayed(Duration(seconds: attempt));
+        if (!_isCurrent(ticket)) return;
+        try {
+          await _openAndroidVideo(uri, ticket);
+          if (!_isCurrent(ticket)) return;
+          opening = false;
+          message = '視聴中';
+          changed();
+          return;
+        } catch (e) {
+          error = '$e';
+        }
+      }
+      if (_isCurrent(ticket)) {
+        await stop(message: '再生を復旧できませんでした。再度再生してください: $error');
+      }
+    } finally {
+      if (ticket == _generation) _recoveringVideo = false;
+    }
+  }
+
   Future<void> stop({String message = '停止中'}) {
     ++_generation;
+    _recoveringVideo = false;
+    _videoRetries = 0;
+    _videoStartedAt = null;
     _startup?.cancel();
     _startup = null;
     active = false;

@@ -111,7 +111,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final list = (tab == 2 ? widget.settings.history : channels)
+    final list = (tab == 2 ? widget.settings.history.take(10) : channels)
         .where(
           (c) =>
               (tab != 1 || widget.settings.favorites.contains(c.key)) &&
@@ -135,6 +135,24 @@ class _ChannelScreenState extends State<ChannelScreen> {
       appBar: AppBar(
         title: const Text('PeerCast'),
         actions: [
+          if (tab == 2)
+            IconButton(
+              tooltip: '閲覧履歴をリセット',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: widget.settings.history.isEmpty
+                  ? null
+                  : () async {
+                      try {
+                        await widget.settings.clearHistory();
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('閲覧履歴を削除できませんでした: $e')),
+                          );
+                        }
+                      }
+                    },
+            ),
           IconButton(
             tooltip: '更新',
             onPressed: loading ? null : refresh,
@@ -202,10 +220,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
                             child: Text(
                               loading
                                   ? 'チャンネルを取得しています…'
-                                  : widget.settings.sources.isEmpty
-                                  ? '設定からYPを追加してください'
                                   : tab == 2
                                   ? '閲覧履歴はありません'
+                                  : widget.settings.sources.isEmpty
+                                  ? '設定からYPを追加してください'
                                   : '該当するチャンネルはありません',
                             ),
                           ),
