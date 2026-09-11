@@ -36,7 +36,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
       autoScroll = true,
       foreground = true,
       composing = false;
-  int interval = 7;
+  int interval = 5;
   @override
   void initState() {
     super.initState();
@@ -330,7 +330,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                       const Text('自動更新: '),
                       DropdownButton<int>(
                         value: interval,
-                        items: [0, 7, 15, 30]
+                        items: [0, 5, 15, 30]
                             .map(
                               (v) => DropdownMenuItem(
                                 value: v,

@@ -277,7 +277,7 @@ void main() {
     for (var cycle = 0; cycle < 5; cycle++) {
       client.fail = cycle == 3;
       client.pending = Completer<void>();
-      await tester.pump(const Duration(seconds: 7));
+      await tester.pump(const Duration(seconds: 5));
       expect(controller.offset, offset);
       expect(tester.getTopLeft(last).dy, y);
       client.pending!.complete();
@@ -310,7 +310,7 @@ void main() {
     final before = controller.offset;
     final bounds = tester.getRect(list);
     client.pending = Completer<void>();
-    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(seconds: 5));
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(tester.getRect(list), bounds);
     expect(controller.offset, before);
@@ -320,7 +320,7 @@ void main() {
     expect(tester.getRect(list), bounds);
     client.pending = null;
     client.count = 21;
-    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     expect(controller.offset, before);
     await tester.pumpWidget(const SizedBox());
@@ -353,7 +353,7 @@ void main() {
       );
       for (final count in [503, 506]) {
         client.count = count;
-        await tester.pump(const Duration(seconds: 7));
+        await tester.pump(const Duration(seconds: 5));
         await tester.pumpAndSettle();
         expect(controller.position.extentAfter, lessThan(1));
         expect(find.byKey(ValueKey(count)), findsOneWidget);
@@ -378,12 +378,12 @@ void main() {
     expect(background(1), Colors.transparent);
     expect(background(2), Colors.transparent);
     client.count = 3;
-    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     expect(background(2), Colors.transparent);
     expect(background(3), const Color(0xFFE3F2FD));
     client.pending = Completer<void>();
-    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(seconds: 5));
     expect(background(3), Colors.transparent);
     expect(find.byType(LinearProgressIndicator), findsNothing);
     client.pending!.complete();
@@ -502,9 +502,9 @@ void main() {
     final interval = tester.widget<DropdownButton<int>>(
       find.byType(DropdownButton<int>),
     );
-    expect(interval.value, 7);
-    expect(interval.items!.map((item) => item.value), [0, 7, 15, 30]);
-    await tester.pump(const Duration(seconds: 6));
+    expect(interval.value, 5);
+    expect(interval.items!.map((item) => item.value), [0, 5, 15, 30]);
+    await tester.pump(const Duration(seconds: 4));
     expect(client.calls, 1);
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
