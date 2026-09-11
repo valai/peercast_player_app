@@ -25,3 +25,5 @@
 - AndroidはMedia3、iOSはmedia_kitを使用します。ネイティブ同梱物の条件は、将来バイナリ配布を行う際に配布対象ごとに確認してください。
 
 この一覧はソースリポジトリ公開用の案内です。バイナリ配布向けの網羅的なライセンス監査・対応ソースパッケージ作成を完了したという意味ではありません。
+
+参考: [GNUのGPLv3案内](https://www.gnu.org/licenses/quick-guide-gplv3.html)、[ApacheとGPLの互換性](https://www.apache.org/licenses/GPL-compatibility)。

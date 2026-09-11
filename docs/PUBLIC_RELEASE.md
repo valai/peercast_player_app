@@ -36,3 +36,5 @@
 ルートの `LICENSE` にGNU GPLv3原文を同梱し、READMEで独自部分をGPL-3.0-or-laterと明示しています。第三者ソースの原文・帰属は維持し、`THIRD_PARTY_NOTICES.md` に取得先・固定リビジョン・移植差分の所在を整理しています。
 
 今回はGitHubでのソース公開だけを対象とします。バイナリ配布パッケージの作成やストア配布の準備は行いません。将来バイナリを配布する場合は、配布物に対応する依存ソース・ライセンス条件・ソース提供方法を別途確認してください。
+
+GitHub側の履歴・PR参照の扱いは[GitHub公式の機密データ削除手順](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)を参照してください。
