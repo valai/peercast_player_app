@@ -361,6 +361,8 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                   if (loading && !backgroundLoading)
                     const LinearProgressIndicator(),
                   Expanded(
+                    // Preserve the list when the composer and loading bar change together.
+                    key: const ValueKey('thread-post-list'),
                     child: TapRegion(
                       groupId: composerGroup,
                       child: GestureDetector(
