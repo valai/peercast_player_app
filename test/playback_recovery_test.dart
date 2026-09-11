@@ -27,6 +27,11 @@ class FakeVideo extends VideoPlayerController {
   final bool fail;
   bool disposed = false;
   double? volume;
+  bool stalled = false;
+  int positionReads = 0;
+  @override
+  Future<Duration?> get position async =>
+      Duration(seconds: stalled ? positionReads : ++positionReads);
   @override
   Future<void> initialize() async {
     if (fail) throw StateError('decoder failed');
@@ -39,7 +44,10 @@ class FakeVideo extends VideoPlayerController {
   void crash() =>
       value = VideoPlayerValue.erroneous('Unexpected runtime error');
   @override
-  Future<void> play() async {}
+  Future<void> play() async {
+    value = value.copyWith(isPlaying: true);
+  }
+
   @override
   Future<void> setVolume(double volume) async {
     this.volume = volume;
@@ -65,6 +73,9 @@ void main() {
     'upstream-clean',
     'upstream-timeout',
     'completed',
+    'live-position',
+    'live-buffering',
+    'live-state-transitions',
   ]) {
     testWidgets('Android recovery: $scenario', (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -104,7 +115,35 @@ void main() {
       ).single;
       await controller.start(channel);
       await controller.toggleMute();
-      if (scenario.startsWith('upstream')) {
+      if (scenario.startsWith('live-')) {
+        // Match video_player's position polling: position is clamped to the
+        // unknown duration (zero), which also sets isCompleted while playing.
+        for (var tick = 0; tick < 20; tick++) {
+          videos.first.value = videos.first.value.copyWith(
+            position: Duration.zero,
+            isCompleted: true,
+            isPlaying: scenario == 'live-position',
+            isBuffering: scenario == 'live-buffering',
+          );
+          await tester.pump(const Duration(milliseconds: 500));
+        }
+        expect(videos.length, 1);
+        expect(videos.first.disposed, false);
+        expect(controller.active, true);
+        expect(controller.opening, false);
+        // Even all-false playback/buffering flags must not cause recovery as
+        // long as the native clock advances (the previous fix missed this).
+        // A true stall must still recover after the grace period.
+        videos.first.value = videos.first.value.copyWith(
+          isPlaying: false,
+          isBuffering: false,
+          isCompleted: true,
+        );
+        videos.first.stalled = true;
+        await tester.pump(const Duration(seconds: 29));
+        expect(controller.opening, false);
+        await tester.pump(const Duration(seconds: 1));
+      } else if (scenario.startsWith('upstream')) {
         engine.receiving = false;
         await tester.pump(const Duration(seconds: 1));
         // The old policy stopped playback after 15 unsuccessful polls.
@@ -129,8 +168,23 @@ void main() {
         }
         engine.receiving = true;
         await tester.pump(const Duration(seconds: 1));
+        if (scenario == 'upstream-clean') {
+          await tester.pump(const Duration(seconds: 5));
+          expect(videos.length, 1);
+          expect(videos.first.disposed, false);
+          expect(controller.opening, false);
+          expect(controller.message, '視聴中');
+          // Subsequent actual decoder failure still uses the recovery path.
+          videos.first.crash();
+        }
       } else if (scenario == 'completed') {
-        videos.first.value = videos.first.value.copyWith(isCompleted: true);
+        videos.first.value = videos.first.value.copyWith(
+          isCompleted: true,
+          isPlaying: false,
+        );
+        videos.first.stalled = true;
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump(const Duration(seconds: 30));
       } else {
         videos.first.crash();
         videos.first.crash();

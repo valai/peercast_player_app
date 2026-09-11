@@ -80,6 +80,8 @@ class PlaybackController extends ChangeNotifier {
   bool _recoveringVideo = false;
   int _videoRetries = 0;
   DateTime? _videoStartedAt;
+  Duration? _androidPosition;
+  DateTime? _androidProgressAt;
   late final StreamSubscription<List<ConnectivityResult>> network;
   late final StreamSubscription<String>? errors;
   late final StreamSubscription<PlayerLog>? logs;
@@ -203,12 +205,14 @@ class PlaybackController extends ChangeNotifier {
             }
           } else if (next.playing && disconnectedAt != null) {
             disconnectedAt = null;
-            if (androidVideo != null) {
+            if (androidVideo?.value.hasError == true) {
               unawaited(_recoverAndroidVideo(uri, ticket, '中継の受信再開'));
             } else {
               message = '視聴中';
             }
           }
+          await _checkAndroidProgress(uri, ticket);
+          if (!_isCurrent(ticket)) return;
           if (requireOpenPort &&
               now().difference(lastPortCheck).inSeconds >= 15) {
             lastPortCheck = now();
@@ -284,6 +288,34 @@ class PlaybackController extends ChangeNotifier {
 
   bool _isCurrent(int ticket) => !_disposed && active && ticket == _generation;
 
+  Future<void> _checkAndroidProgress(Uri uri, int ticket) async {
+    final output = androidVideo;
+    if (output == null || !output.value.isInitialized || _recoveringVideo) {
+      return;
+    }
+    // value.position is clamped to duration (often zero for live FLV), and
+    // isCompleted is derived from that same value. Read the native clock instead.
+    Duration? position;
+    try {
+      position = await output.position.timeout(const Duration(seconds: 5));
+    } catch (e) {
+      if (_isCurrent(ticket) && identical(androidVideo, output)) {
+        unawaited(_recoverAndroidVideo(uri, ticket, '再生位置を取得できませんでした: $e'));
+      }
+      return;
+    }
+    if (!_isCurrent(ticket) || !identical(androidVideo, output)) return;
+    if (!snapshot.playing || position == null || position != _androidPosition) {
+      _androidPosition = position;
+      _androidProgressAt = now();
+      return;
+    }
+    _androidProgressAt ??= now();
+    if (now().difference(_androidProgressAt!) >= const Duration(seconds: 30)) {
+      unawaited(_recoverAndroidVideo(uri, ticket, '再生位置が30秒間進みませんでした'));
+    }
+  }
+
   Future<void> _openAndroidVideo(Uri uri, int ticket) async {
     final previous = androidVideo;
     androidVideo = null;
@@ -300,7 +332,7 @@ class PlaybackController extends ChangeNotifier {
       if (ready &&
           _isCurrent(ticket) &&
           identical(androidVideo, output) &&
-          (output.value.hasError || output.value.isCompleted)) {
+          output.value.hasError) {
         unawaited(
           _recoverAndroidVideo(uri, ticket, output.value.errorDescription),
         );
@@ -316,6 +348,8 @@ class PlaybackController extends ChangeNotifier {
       throw StateError(output.value.errorDescription ?? '動画再生エラー');
     }
     _videoStartedAt = now();
+    _androidPosition = null;
+    _androidProgressAt = now();
     ready = true;
   }
 
@@ -366,6 +400,8 @@ class PlaybackController extends ChangeNotifier {
     _recoveringVideo = false;
     _videoRetries = 0;
     _videoStartedAt = null;
+    _androidPosition = null;
+    _androidProgressAt = null;
     _startup?.cancel();
     _startup = null;
     active = false;
