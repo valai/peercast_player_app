@@ -166,7 +166,8 @@ class PlaybackController extends ChangeNotifier {
       await engine.connect(channel);
       if (_disposed || ticket != _generation) return;
       var lastPortCheck = now();
-      var lost = 0;
+      DateTime? disconnectedAt;
+      var playbackStarted = false;
       timer = Timer.periodic(const Duration(seconds: 1), (_) async {
         if (_polling || !active) return;
         _polling = true;
@@ -186,10 +187,27 @@ class PlaybackController extends ChangeNotifier {
             await stop(message: portFailure());
             return;
           }
-          lost = next.playing || opening ? 0 : lost + 1;
-          if (lost >= 15) {
-            await stop(message: '配信との接続が終了しました');
-            return;
+          // isPlaying describes the current relay, not whether the broadcast
+          // has ended. Let the core search for another upstream before stopping.
+          if (playbackStarted && !next.playing) {
+            disconnectedAt ??= now();
+            message = '中継との接続が途切れたため再接続を待っています…';
+            if (now().difference(disconnectedAt!) >=
+                const Duration(minutes: 2)) {
+              await stop(
+                message:
+                    '中継との接続を2分間復旧できませんでした。再度再生してください。\n'
+                    '${next.connectionTimeoutMessage}',
+              );
+              return;
+            }
+          } else if (next.playing && disconnectedAt != null) {
+            disconnectedAt = null;
+            if (androidVideo != null) {
+              unawaited(_recoverAndroidVideo(uri, ticket, '中継の受信再開'));
+            } else {
+              message = '視聴中';
+            }
           }
           if (requireOpenPort &&
               now().difference(lastPortCheck).inSeconds >= 15) {
@@ -253,6 +271,7 @@ class PlaybackController extends ChangeNotifier {
         }
       }
       if (_disposed || ticket != _generation) return;
+      playbackStarted = true;
       opening = false;
       message = '視聴中';
       changed();
@@ -281,7 +300,7 @@ class PlaybackController extends ChangeNotifier {
       if (ready &&
           _isCurrent(ticket) &&
           identical(androidVideo, output) &&
-          output.value.hasError) {
+          (output.value.hasError || output.value.isCompleted)) {
         unawaited(
           _recoverAndroidVideo(uri, ticket, output.value.errorDescription),
         );
@@ -311,6 +330,12 @@ class PlaybackController extends ChangeNotifier {
     opening = true;
     try {
       while (_isCurrent(ticket) && _videoRetries < 3) {
+        // Upstream recovery is bounded by the polling deadline. Do not spend
+        // decoder retries while the local stream has no upstream data.
+        if (!snapshot.playing) {
+          await Future<void>.delayed(const Duration(seconds: 1));
+          continue;
+        }
         final attempt = ++_videoRetries;
         debugPrint('Android playback recovery $attempt/3: $error');
         message = '再生が途切れたため再接続中…（$attempt/3）';

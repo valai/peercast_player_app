@@ -13,9 +13,13 @@ import 'package:peercast_app/services/playback_controller.dart';
 import 'playback_policy_test.dart' show FakeEngine;
 
 class PlayingEngine extends FakeEngine {
+  bool receiving = true;
   @override
-  Future<EngineSnapshot> snapshot() async =>
-      EngineSnapshot(running: running, playing: running, firewall: 'reachable');
+  Future<EngineSnapshot> snapshot() async => EngineSnapshot(
+    running: running,
+    playing: running && receiving,
+    firewall: 'reachable',
+  );
 }
 
 class FakeVideo extends VideoPlayerController {
@@ -57,6 +61,10 @@ void main() {
     'wifi',
     'repeated',
     'switch',
+    'upstream',
+    'upstream-clean',
+    'upstream-timeout',
+    'completed',
   ]) {
     testWidgets('Android recovery: $scenario', (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -96,8 +104,37 @@ void main() {
       ).single;
       await controller.start(channel);
       await controller.toggleMute();
-      videos.first.crash();
-      videos.first.crash();
+      if (scenario.startsWith('upstream')) {
+        engine.receiving = false;
+        await tester.pump(const Duration(seconds: 1));
+        // The old policy stopped playback after 15 unsuccessful polls.
+        for (var i = 0; i < 25; i++) {
+          await tester.pump(const Duration(seconds: 1));
+        }
+        expect(controller.active, true);
+        expect(engine.running, true);
+        expect(controller.message, contains('再接続'));
+        if (scenario != 'upstream-clean') videos.first.crash();
+        await tester.pump(const Duration(seconds: 5));
+        expect(videos.length, 1);
+        if (scenario == 'upstream-timeout') {
+          await tester.pump(const Duration(minutes: 2));
+          expect(controller.active, false);
+          expect(controller.message, contains('2分間復旧できませんでした'));
+          await controller.stop();
+          controller.dispose();
+          await tester.pump(const Duration(seconds: 1));
+          unawaited(changes.close());
+          return;
+        }
+        engine.receiving = true;
+        await tester.pump(const Duration(seconds: 1));
+      } else if (scenario == 'completed') {
+        videos.first.value = videos.first.value.copyWith(isCompleted: true);
+      } else {
+        videos.first.crash();
+        videos.first.crash();
+      }
       expect(controller.active, true);
       expect(controller.opening, true);
       expect(engine.running, true);
