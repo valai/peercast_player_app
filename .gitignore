@@ -53,3 +53,19 @@ app.*.map.json
 
 /native/boringssl/
 /native/build/
+
+# Local credentials, signing material and private environment overrides.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.p8
+*.key
+*.mobileprovision
+*.provisionprofile
+
+# Isolated, sanitized repository prepared for public release.
+/.public-release/
