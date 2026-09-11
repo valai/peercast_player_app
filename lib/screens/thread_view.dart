@@ -261,8 +261,12 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
       builder: (context, constraints) => Column(
         children: [
           Material(
-            color: Colors.white,
-            shape: const Border(bottom: BorderSide(color: Color(0xFFE0E0E0))),
+            color: Theme.of(context).colorScheme.surface,
+            shape: Border(
+              bottom: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
             child: Column(
               children: [
                 Padding(
@@ -386,16 +390,27 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                         final sage =
                                             post.mail.trim().toLowerCase() ==
                                             'sage';
+                                        final dark =
+                                            Theme.of(context).brightness ==
+                                            Brightness.dark;
                                         final nameColor = sage
-                                            ? const Color(0xFF800080)
-                                            : const Color(0xFF008000);
+                                            ? (dark
+                                                  ? const Color(0xFFE6A0E6)
+                                                  : const Color(0xFF800080))
+                                            : (dark
+                                                  ? const Color(0xFF81C784)
+                                                  : const Color(0xFF008000));
                                         return ColoredBox(
                                           key: ValueKey(post.number),
                                           color:
                                               newPostNumbers.contains(
                                                 post.number,
                                               )
-                                              ? const Color(0xFFE3F2FD)
+                                              ? (dark
+                                                    ? Theme.of(context)
+                                                          .colorScheme
+                                                          .primaryContainer
+                                                    : const Color(0xFFE3F2FD))
                                               : Colors.transparent,
                                           child: Container(
                                             decoration: BoxDecoration(
@@ -440,10 +455,14 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                                                 ),
                                                           child: Text(
                                                             '${post.number}',
-                                                            style: const TextStyle(
-                                                              color: Color(
-                                                                0xFF0000FF,
-                                                              ),
+                                                            style: TextStyle(
+                                                              color: dark
+                                                                  ? const Color(
+                                                                      0xFF90CAF9,
+                                                                    )
+                                                                  : const Color(
+                                                                      0xFF0000FF,
+                                                                    ),
                                                               decoration:
                                                                   TextDecoration
                                                                       .underline,
@@ -478,9 +497,9 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
                                                       .textTheme
                                                       .labelSmall
                                                       ?.copyWith(
-                                                        color: const Color(
-                                                          0xFF666666,
-                                                        ),
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
                                                       ),
                                                 ),
                                                 Padding(

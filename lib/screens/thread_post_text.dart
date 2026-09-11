@@ -45,8 +45,10 @@ class _ThreadPostTextState extends State<ThreadPostText> {
       spans.add(
         TextSpan(
           text: url,
-          style: const TextStyle(
-            color: Colors.blue,
+          style: TextStyle(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF90CAF9)
+                : Colors.blue,
             decoration: TextDecoration.underline,
           ),
           recognizer: recognizer,

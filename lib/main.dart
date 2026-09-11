@@ -34,18 +34,29 @@ class MyApp extends StatelessWidget {
   final AppSettings settings;
   final ChannelDirectory? directory;
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'PeerCast',
-    locale: const Locale('ja'),
-    supportedLocales: const [Locale('ja')],
-    localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    builder: (context, child) => KeyboardDismiss(child: child!),
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff167f8b)),
-      useMaterial3: true,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: settings,
+    builder: (context, _) => MaterialApp(
+      title: 'PeerCast',
+      locale: const Locale('ja'),
+      supportedLocales: const [Locale('ja')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      builder: (context, child) => KeyboardDismiss(child: child!),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff167f8b)),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xff167f8b),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: settings.themeMode,
+      home: ChannelScreen(settings: settings, directory: directory),
     ),
-    home: ChannelScreen(settings: settings, directory: directory),
   );
 }
 

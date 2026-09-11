@@ -51,6 +51,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         children: [
           ListTile(
+            leading: const Icon(Icons.brightness_6),
+            title: const Text('テーマ'),
+            trailing: DropdownButton<ThemeMode>(
+              value: s.themeMode,
+              items: const [
+                DropdownMenuItem(
+                  value: ThemeMode.system,
+                  child: Text('端末に合わせる'),
+                ),
+                DropdownMenuItem(value: ThemeMode.light, child: Text('ライト')),
+                DropdownMenuItem(value: ThemeMode.dark, child: Text('ダーク')),
+              ],
+              onChanged: (value) async {
+                if (value == null) return;
+                s.themeMode = value;
+                await save();
+              },
+            ),
+          ),
+          const Divider(),
+          ListTile(
             title: const Text('YellowPage'),
             subtitle: const Text('有効なYPからチャンネルを取得します'),
             trailing: IconButton(
