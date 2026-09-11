@@ -19,9 +19,31 @@
 #include "json.hpp"
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <sys/system_properties.h>
+#endif
+#ifdef __APPLE__
+#include <TargetConditionals.h>
 #endif
 #define EXPORT extern "C" __attribute__((visibility("default")))
 namespace {
+// Match the app runtime check without trusting a caller-supplied bypass flag.
+// This permits receiving on virtual devices; it never claims an open port.
+bool isEmulator() {
+#if defined(__ANDROID__)
+  char hardware[PROP_VALUE_MAX] = {};
+  char fingerprint[PROP_VALUE_MAX] = {};
+  __system_property_get("ro.hardware", hardware);
+  __system_property_get("ro.build.fingerprint", fingerprint);
+  return std::strcmp(hardware, "goldfish") == 0 ||
+         std::strcmp(hardware, "ranchu") == 0 ||
+         std::strncmp(fingerprint, "generic/sdk", 11) == 0 ||
+         std::strncmp(fingerprint, "google/sdk_gphone", sizeof("google/sdk_gphone") - 1) == 0;
+#elif defined(__APPLE__) && TARGET_OS_SIMULATOR
+  return true;
+#else
+  return false;
+#endif
+}
 std::recursive_mutex apiMutex;
 std::mutex requestMutex;
 std::mutex connectionErrorMutex;
@@ -132,11 +154,16 @@ bool mobileRequestAllowed(const char* line, bool local) {
   if (!running) return false;
   const std::string request(line);
   if (request.rfind("pcp", 0) == 0 || request.rfind("GIV", 0) == 0) return true;
-  if (activeId.empty() || portState != 1) return false;
+  if (activeId.empty()) return false;
   const auto end = request.find(' ', 4);
   if (end == std::string::npos || request.rfind("GET ", 0) != 0) return false;
   const auto path = request.substr(4, end - 4);
-  return (relaysAllowed && path == "/channel/" + activeId) || (local && (path == "/stream/" + activeId || path == "/stream/" + activeId + ".flv"));
+  const bool localPlayback = local &&
+      (path == "/stream/" + activeId || path == "/stream/" + activeId + ".flv");
+  // The player reads localhost HTTP after the core starts receiving.
+  // Only virtual-device playback may proceed without an external port check.
+  if (localPlayback) return portState == 1 || isEmulator();
+  return portState == 1 && relaysAllowed && path == "/channel/" + activeId;
 }
 EXPORT const char* pc_error() { return lastError.c_str(); }
 EXPORT int pc_stop() {
@@ -363,7 +390,7 @@ EXPORT int pc_connect(const char* id, const char* tracker) {
   std::lock_guard<std::recursive_mutex> api(apiMutex);
   try {
     if (!running || !std::regex_match(id, std::regex("[A-Fa-f0-9]{32}"))) return fail("Invalid channel or inactive engine");
-    if (portState != 1) return fail("Port reachability has not been verified");
+    if (portState != 1 && !isEmulator()) return fail("Port reachability has not been verified");
     if (selected) return fail("Stop the current session before selecting another channel");
     auto host = Host::fromString(tracker, 7144);
     if (host.port == 0) return fail("Invalid tracker port");

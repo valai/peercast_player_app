@@ -16,6 +16,18 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "peercast_app/runtime")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "isEmulator") {
+                    result.success(
+                        Build.HARDWARE == "goldfish" || Build.HARDWARE == "ranchu" ||
+                            Build.FINGERPRINT.startsWith("generic/sdk") ||
+                            Build.FINGERPRINT.startsWith("google/sdk_gphone")
+                    )
+                } else {
+                    result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "peercast/display")
             .setMethodCallHandler { call, result ->
                 if (call.method == "setFullscreen") {

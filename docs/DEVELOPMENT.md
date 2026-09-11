@@ -125,3 +125,15 @@ YP一覧・設定・掲示板と直接視聴・リレーを実装した開発版
 既存のデバッグ署名版には上書きインストールできません。
 配布版への切り替え時は必要なデータを退避してから旧版をアンインストールしてください。
 アンインストールするとアプリ内の保存データが削除されます。
+### UPnPによるポート開放
+
+- 設定 →「UPnPで自動ポート開放」→「自動でポートを開放」で、現在の待受ポートをIPv4/TCPでルーターに登録します。Wi-Fi接続とルーター側のUPnP有効化が必要です。
+- SSDPでIGD v1/v2を検出し、WANIPConnection / WANPPPConnectionのSOAP APIを使用します。既存の転送先・ポート・説明を照合し、他の端末やアプリの設定は上書き・削除しません。
+- アプリ終了時に転送は削除しません。不要になった場合やポート変更前に「このポートの転送を削除」を実行してください。ネットワーク・端末IP変更後は以前のルーター設定を確認して再登録してください。
+- 無期限の転送を要求しますが、ルーターが期限を設定した場合は結果に秒数を表示します。自動更新は行わないため、期限後やルーター再起動後は再実行してください。
+- 登録成功は外部到達の保証ではありません。同画面の「SPでポート開放を確認」で確認用待受を開始できます。二重NAT・CGNATなど回線側の制限はUPnPだけでは解消できません。
+- iOS: `Runner/Runner.entitlements` を全構成の署名設定に指定しています。実機ではAppleからMulticast Networking entitlementの承認を得て、対応するプロビジョニングプロファイルを使用する必要があります。初回のローカルネットワークアクセスも許可してください。承認・プロファイル更新はこのコード変更では実施されません。
+  - Apple: https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy
+  - 権限: https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.networking.multicast
+- Android: INTERNET権限でSSDP検索を送信し、応答は送信元UDPポートへのユニキャストで受信します。
+- 検証: `./scripts/flutter.ps1 test test/upnp_test.dart`。模擬ルーターでSOAP登録・照合・削除・競合・異常応答・タイムアウト、UIのWi-Fi条件と連打防止を検証します。実ルーターとiOS実機での検証は別途必要です。

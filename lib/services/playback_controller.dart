@@ -13,6 +13,7 @@ import '../models/channel.dart';
 import 'app_settings.dart';
 import 'peercast_engine.dart';
 import 'playback_audio_session.dart';
+import 'runtime_environment.dart';
 import 'playback_tuning.dart';
 import 'playback_startup.dart';
 
@@ -25,7 +26,9 @@ class PlaybackController extends ChangeNotifier {
     Future<Directory> Function()? supportDirectory,
     Player? Function()? playerFactory,
     DateTime Function()? now,
-  }) : now = now ?? DateTime.now,
+    Future<bool> Function()? emulatorCheck,
+  }) : isEmulator = emulatorCheck ?? RuntimeEnvironment.isEmulator,
+       now = now ?? DateTime.now,
        engine = engine ?? PeerCastEngine(),
        checkConnectivity =
            connectivityCheck ?? Connectivity().checkConnectivity,
@@ -62,6 +65,7 @@ class PlaybackController extends ChangeNotifier {
       if (active) unawaited(stop(message: '再生できませんでした: $e'));
     });
   }
+  final Future<bool> Function() isEmulator;
   final DateTime Function() now;
   final AppSettings settings;
   final EngineBackend engine;
@@ -119,6 +123,8 @@ class PlaybackController extends ChangeNotifier {
       if (links.contains(ConnectivityResult.none)) {
         throw StateError('ネットワークに接続してください');
       }
+      final requireOpenPort = !await isEmulator();
+      if (_disposed || ticket != _generation) return;
       final directory = await supportDirectory();
       if (_disposed || ticket != _generation) return;
       final uri = await engine.start(
@@ -128,21 +134,23 @@ class PlaybackController extends ChangeNotifier {
         settings.maxRelays,
       );
       if (_disposed || ticket != _generation) return;
-      message = 'ポート $port の開放を確認中…';
-      changed();
-      await engine.checkPort(channel);
-      final portDeadline = now().add(const Duration(seconds: 35));
-      while (true) {
-        if (_disposed || ticket != _generation) return;
-        snapshot = await engine.snapshot();
-        if (_disposed || ticket != _generation) return;
-        if (snapshot.firewall == 'reachable') break;
-        if (!snapshot.running ||
-            snapshot.firewall == 'blocked' ||
-            now().isAfter(portDeadline)) {
-          throw StateError(portFailure());
+      if (requireOpenPort) {
+        message = 'ポート $port の開放を確認中…';
+        changed();
+        await engine.checkPort(channel);
+        final portDeadline = now().add(const Duration(seconds: 35));
+        while (true) {
+          if (_disposed || ticket != _generation) return;
+          snapshot = await engine.snapshot();
+          if (_disposed || ticket != _generation) return;
+          if (snapshot.firewall == 'reachable') break;
+          if (!snapshot.running ||
+              snapshot.firewall == 'blocked' ||
+              now().isAfter(portDeadline)) {
+            throw StateError(portFailure());
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 400));
         }
-        await Future<void>.delayed(const Duration(milliseconds: 400));
       }
       final currentLinks = await checkConnectivity();
       if (_disposed || ticket != _generation) return;
@@ -168,7 +176,8 @@ class PlaybackController extends ChangeNotifier {
           final next = await engine.snapshot();
           if (_disposed || ticket != _generation) return;
           snapshot = next;
-          if (!next.running || next.firewall != 'reachable') {
+          if (!next.running ||
+              (requireOpenPort && next.firewall != 'reachable')) {
             await stop(message: portFailure());
             return;
           }
@@ -177,7 +186,8 @@ class PlaybackController extends ChangeNotifier {
             await stop(message: '配信との接続が終了しました');
             return;
           }
-          if (now().difference(lastPortCheck).inSeconds >= 15) {
+          if (requireOpenPort &&
+              now().difference(lastPortCheck).inSeconds >= 15) {
             lastPortCheck = now();
             await engine.checkPort(channel);
           }
@@ -193,7 +203,7 @@ class PlaybackController extends ChangeNotifier {
         snapshot = await engine.snapshot();
         if (_disposed || ticket != _generation) return;
         changed();
-        if (snapshot.firewall != 'reachable') {
+        if (requireOpenPort && snapshot.firewall != 'reachable') {
           throw StateError('ポート開放を確認できないため停止しました');
         }
         if (snapshot.playing) break;

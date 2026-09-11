@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
 import 'port_check_screen.dart';
+import 'upnp_screen.dart';
 import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool portValid = true;
   Future<void> save() async {
     try {
       await widget.settings.save();
@@ -125,6 +127,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               onChanged: (v) async {
                 final port = int.tryParse(v);
+                setState(
+                  () =>
+                      portValid = port != null && port >= 1024 && port <= 65535,
+                );
                 if (port != null && port >= 1024 && port <= 65535) {
                   s.port = port;
                   await save();
@@ -135,6 +141,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text('リレーの可否は外部からの到達確認が必要です。待受ポートの設定だけではリレー可能になりません。'),
+          ),
+          ListTile(
+            enabled: portValid,
+            leading: const Icon(Icons.router),
+            title: const Text('UPnPで自動ポート開放'),
+            subtitle: Text('ルーターを検出してTCP ${s.port} を開放・削除します'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: !portValid
+                ? null
+                : () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          UpnpScreen(port: s.port, relays: s.maxRelays),
+                    ),
+                  ),
           ),
           ListTile(
             leading: const Icon(Icons.network_check),

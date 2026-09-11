@@ -63,6 +63,7 @@ int runScenario(const std::string& mode, const std::string& channel) {
   std::atomic<bool> relayDone{false};
   std::string peerError;
   std::thread peer([&] { int fd=-1; try {
+    if (mode != "emulator") {
     fd=accept(listener,nullptr,nullptr); require(fd>=0,"accept");
 #ifdef SO_NOSIGPIPE
     int noSigPipe=1; setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&noSigPipe,sizeof(noSigPipe));
@@ -107,7 +108,8 @@ int runScenario(const std::string& mode, const std::string& channel) {
       linger reset{1,0}; setsockopt(fd,SOL_SOCKET,SO_LINGER,&reset,sizeof(reset)); }
     else findAtom(fd,"quit");
     close(fd);
-    if (mode == "relay" || mode == "connect" || mode == "rejected" || mode == "retry" || mode == "referrals") {
+    }
+    if (mode == "emulator" || mode == "relay" || mode == "connect" || mode == "rejected" || mode == "retry" || mode == "referrals") {
       auto retryStart=std::chrono::steady_clock::now();
       for(int attempt=0;attempt<(mode=="retry"?2:1);++attempt) {
       if(mode=="referrals") {
@@ -140,9 +142,13 @@ int runScenario(const std::string& mode, const std::string& channel) {
       // The successful independent probe must also update the relay core.
       // Otherwise every fetch asks for another reverse connection and can
       // advertise itself as firewalled despite having just passed the probe.
-      require(advertisedPort==port,"verified port missing from playback HELO");
-      require(!repeatedPing,"playback repeated an already successful reverse probe");
-      sendAll(fd,parent("oleh",3)+atom("sid",std::string(16,'x'))+atom("rip",number(0x08080808))+atom("port",number(port,2)));
+      if (mode == "emulator") {
+        require(advertisedPort==0,"emulator must not claim an unverified open port");
+      } else {
+        require(advertisedPort==port,"verified port missing from playback HELO");
+        require(!repeatedPing,"playback repeated an already successful reverse probe");
+      }
+      sendAll(fd,parent("oleh",3)+atom("sid",std::string(16,'x'))+atom("rip",number(0x08080808))+atom("port",number(mode=="emulator" ? 0 : port,2)));
       if(mode=="retry" && attempt==0) {
         retryStart=std::chrono::steady_clock::now();
         sendAll(fd,atom("quit",number(1003))); close(fd); continue;
@@ -151,7 +157,7 @@ int runScenario(const std::string& mode, const std::string& channel) {
       for(size_t i=0;i<channel.size();i+=2) channelId+=char(std::stoul(channel.substr(i,2),nullptr,16));
       const std::string flv("FLV\x01\x01\x00\x00\x00\x09\x00\x00\x00\x00",13);
       sendAll(fd,parent("chan",2)+atom("id",channelId)+parent("pkt",3)+atom("type","head")+atom("pos",number(0))+atom("data",flv));
-      if(mode=="relay") {
+      if(mode=="relay" || mode=="emulator") {
         for(int i=0;i<100 && !relayDone;++i) {
           sendAll(fd,parent("chan",2)+atom("id",channelId)+parent("pkt",3)+atom("type","data")+
             atom("pos",number(13+i*32))+atom("data",std::string(32,'R')));
@@ -163,12 +169,13 @@ int runScenario(const std::string& mode, const std::string& channel) {
     }
   } catch(const std::exception& e) { peerError=e.what(); if(fd>=0) close(fd); } });
   require(pc_start("/data/local/tmp",port,1)==0,pc_error());
-  require(pc_check_port("127.0.0.1:17999",channel.c_str())==0,pc_error());
+  if (mode != "emulator") require(pc_check_port("127.0.0.1:17999",channel.c_str())==0,pc_error());
   std::string state;
-  for(int i=0;i<100;++i) { state=pc_snapshot(); if(state.find("reachable")!=std::string::npos || state.find("blocked")!=std::string::npos) break; std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
+  state=pc_snapshot();
+  for(int i=0;mode!="emulator" && i<100;++i) { state=pc_snapshot(); if(state.find("reachable")!=std::string::npos || state.find("blocked")!=std::string::npos) break; std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
   require(state.find("\"connectionError\":\"\"")!=std::string::npos,"previous connection error survived restart");
   bool received=false;
-  if((mode=="relay" || mode=="connect" || mode=="rejected" || mode=="retry" || mode=="referrals") && state.find("reachable")!=std::string::npos) {
+  if(mode=="emulator" || ((mode=="relay" || mode=="connect" || mode=="rejected" || mode=="retry" || mode=="referrals") && state.find("reachable")!=std::string::npos)) {
     require(pc_connect(channel.c_str(),"127.0.0.1:17999")==0,pc_error());
     for(int i=0;i<(mode=="retry"?300:50);++i) {
       state=pc_snapshot();
@@ -178,6 +185,18 @@ int runScenario(const std::string& mode, const std::string& channel) {
     }
   }
   std::string relayError;
+  if(mode=="emulator" && received) {
+    int player=-1;
+    try {
+      player=makeSocket(); auto target=address(port);
+      require(connect(player,(sockaddr*)&target,sizeof(target))==0,"local player connect");
+      sendAll(player,"GET /stream/"+channel+".flv HTTP/1.0\r\n\r\n");
+      require(readLine(player).find("200")!=std::string::npos,"local playback HTTP rejected");
+      while(readLine(player)!="\r\n") {}
+      require(readBytes(player,3)=="FLV","local player did not receive FLV");
+    } catch(const std::exception& e) { relayError=e.what(); }
+    if(player>=0) close(player);
+  }
   if(mode=="relay" && received) {
     int downstream=-1;
     try {
@@ -217,12 +236,12 @@ int runScenario(const std::string& mode, const std::string& channel) {
   require(relayError.empty(),relayError.c_str());
   require(peerError.empty(),"reverse PCP exchange failed");
   const bool shouldPass = mode == "normal" || mode == "reset" || mode == "busy" || mode == "relay" || mode == "connect" || mode == "rejected" || mode == "retry" || mode == "referrals";
-  require(state.find(shouldPass ? "reachable" : "blocked")!=std::string::npos,"unexpected port result");
+  require(state.find(mode=="emulator" ? "unknown" : shouldPass ? "reachable" : "blocked")!=std::string::npos,"unexpected port result");
   if (mode == "missing") require(state.find("逆接続できない") == std::string::npos,"missing port is not a negative probe");
   if (!shouldPass) require(state.find("portCheckError")!=std::string::npos,"missing diagnostic");
   if(mode=="rejected") require(state.find("Channel not found")!=std::string::npos,"missing native rejection diagnostic");
-  if(mode=="relay" || mode=="connect" || mode=="retry" || mode=="referrals") require(received,"verified session did not receive channel data");
-  puts(mode=="relay" ? "PASS: relay forwards header/data and count changes 0 -> 1 -> 0" : "PASS: external probe with reverse PCP handshake"); return 0;
+  if(mode=="emulator" || mode=="relay" || mode=="connect" || mode=="retry" || mode=="referrals") require(received,"verified session did not receive channel data");
+  puts(mode=="emulator" ? "PASS: emulator receives with unverified port without advertising reachability" : mode=="relay" ? "PASS: relay forwards header/data and count changes 0 -> 1 -> 0" : "PASS: external probe with reverse PCP handshake"); return 0;
  } catch(const std::exception& e) { fprintf(stderr,"FAIL: %s\n",e.what()); return 1; }
 }
 
