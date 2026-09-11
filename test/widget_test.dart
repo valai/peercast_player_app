@@ -138,6 +138,107 @@ void main() {
     expect(restored.port, 17144);
     expect(restored.maxRelays, 2);
   });
+  test('履歴は直近10件を保存し再閲覧したチャンネルを先頭に移す', () async {
+    final s = await AppSettings.load();
+    final channels = List.generate(
+      12,
+      (i) => Channel.parse(
+        row(id: i.toRadixString(16).padLeft(32, '0'), name: '履歴$i'),
+        YellowPage.defaults.first,
+      ).single,
+    );
+    for (final c in channels) {
+      await s.remember(c);
+    }
+    await s.remember(channels[5]);
+    final restored = await AppSettings.load();
+    expect(restored.history.length, 10);
+    expect(restored.history.first.key, channels[5].key);
+    expect(restored.history.last.key, channels[2].key);
+    expect(restored.history.map((c) => c.key).toSet().length, 10);
+  });
+  test('旧設定の履歴を10件に制限し保存設定はオンを引き継ぐ', () async {
+    final s = await AppSettings.load();
+    final prefs = await SharedPreferences.getInstance();
+    final data = jsonDecode(
+      prefs.getString(AppSettings.storageKey)!,
+    ) as Map<String, dynamic>;
+    data.remove('historyEnabled');
+    data['history'] = List.generate(
+      12,
+      (i) => Channel.parse(
+        row(id: i.toRadixString(16).padLeft(32, '0')),
+        s.sources.first,
+      ).single.toJson(),
+    );
+    await prefs.setString(AppSettings.storageKey, jsonEncode(data));
+    final restored = await AppSettings.load();
+    expect(restored.historyEnabled, isTrue);
+    expect(restored.history.length, 10);
+  });
+  testWidgets('履歴保存をオフにすると削除され再起動後も記録しない', (tester) async {
+    final s = await AppSettings.load();
+    final c = Channel.parse(row(), s.sources.first).single;
+    await s.remember(c);
+    await tester.pumpWidget(
+      MyApp(
+        settings: s,
+        directory: ChannelDirectory(
+          client: MockClient((_) async => http.Response('', 200)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('閲覧履歴を残す'));
+    await tester.pumpAndSettle();
+    expect(s.history, isEmpty);
+    final restored = await AppSettings.load();
+    expect(restored.historyEnabled, isFalse);
+    await restored.remember(c);
+    expect(restored.history, isEmpty);
+    await tester.tap(find.text('閲覧履歴を残す'));
+    await tester.pumpAndSettle();
+    expect(s.historyEnabled, isTrue);
+    expect(s.history, isEmpty);
+    await s.remember(c);
+    expect((await AppSettings.load()).history.single.key, c.key);
+  });
+  testWidgets('履歴一覧からリセットすると保存データも空になる', (tester) async {
+    final s = await AppSettings.load();
+    final c = Channel.parse(row(), s.sources.first).single;
+    await s.remember(c);
+    await s.toggleFavorite(c);
+    await tester.pumpWidget(
+      MyApp(
+        settings: s,
+        directory: ChannelDirectory(
+          client: MockClient((_) async => http.Response('', 200)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('閲覧履歴をリセット'), findsNothing);
+    await tester.tap(find.text('閲覧履歴'));
+    await tester.pumpAndSettle();
+    expect(find.text(c.name), findsOneWidget);
+    await tester.tap(find.byTooltip('閲覧履歴をリセット'));
+    await tester.pumpAndSettle();
+    expect(find.text('閲覧履歴はありません'), findsOneWidget);
+    final restored = await AppSettings.load();
+    expect(restored.history, isEmpty);
+    expect(restored.historyEnabled, isTrue);
+    expect(restored.favorites, contains(c.key));
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.delete_outline),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
   test('破損した保存データに初期YPを再挿入しない', () async {
     SharedPreferences.setMockInitialValues({AppSettings.storageKey: '{broken'});
     final s = await AppSettings.load();

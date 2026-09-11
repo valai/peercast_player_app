@@ -71,6 +71,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.history),
+            title: const Text('閲覧履歴を残す'),
+            subtitle: const Text('直近10件を保存します。オフにすると履歴を削除します。'),
+            value: s.historyEnabled,
+            onChanged: (value) async {
+              s.historyEnabled = value;
+              await save();
+            },
+          ),
           const Divider(),
           ListTile(
             title: const Text('YellowPage'),

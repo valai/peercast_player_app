@@ -12,6 +12,13 @@ class AppSettings extends ChangeNotifier {
   List<YellowPage> sources = List.of(YellowPage.defaults);
   Set<String> favorites = {};
   List<Channel> history = [];
+  bool _historyEnabled = true;
+  bool get historyEnabled => _historyEnabled;
+  set historyEnabled(bool value) {
+    _historyEnabled = value;
+    if (!value) history = [];
+  }
+
   Map<String, String> threads = {};
   int _maxRelays = 1;
   int get maxRelays => _maxRelays;
@@ -32,6 +39,8 @@ class AppSettings extends ChangeNotifier {
         settings.history = (j['history'] as List)
             .map((v) => Channel.fromJson(v as Map<String, dynamic>))
             .toList();
+        settings.history = settings.history.take(10).toList();
+        settings.historyEnabled = j['historyEnabled'] as bool? ?? true;
         settings.threads = Map<String, String>.from(j['threads'] as Map);
         settings.maxRelays = (j['maxRelays'] as int).clamp(1, 16);
         settings.themeMode = ThemeMode.values.firstWhere(
@@ -56,6 +65,7 @@ class AppSettings extends ChangeNotifier {
         'sources': sources.map((s) => s.toJson()).toList(),
         'favorites': favorites.toList(),
         'history': history.map((c) => c.toJson()).toList(),
+        'historyEnabled': historyEnabled,
         'threads': threads,
         'maxRelays': maxRelays,
         'port': port,
@@ -71,8 +81,14 @@ class AppSettings extends ChangeNotifier {
     await save();
   }
 
+  Future<void> clearHistory() async {
+    history = [];
+    await save();
+  }
+
   Future<void> remember(Channel c) async {
-    history = [c, ...history.where((v) => v.key != c.key)].take(100).toList();
+    if (!historyEnabled) return;
+    history = [c, ...history.where((v) => v.key != c.key)].take(10).toList();
     await save();
   }
 }

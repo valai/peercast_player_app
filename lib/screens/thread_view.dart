@@ -216,8 +216,6 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
       if (!mounted) return;
       message.clear();
       setState(() => composing = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('書き込みました')));
       await reload();
     } catch (e) {
       if (mounted) setState(() => error = '書き込み失敗: $e');
