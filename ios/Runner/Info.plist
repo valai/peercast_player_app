@@ -25,7 +25,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSExceptionDomains</key><dict><key>bayonet.ddo.jp</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>www.dmdbs.net</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>bbs.jpnkn.com</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>jbbs.shitaraba.net</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict><key>jbbs.livedoor.jp</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict></dict></dict>
-<key>NSLocalNetworkUsageDescription</key><string>PeerCastの視聴・リレーと、UPnPによるルーターの検出・ポート開放にローカルネットワークを使用します。</string>
+<key>NSLocalNetworkUsageDescription</key><string>PeerCastの視聴・リレーにローカルネットワークを使用します。</string>
 <key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
