@@ -1,4 +1,4 @@
-# PeerCast App
+# ぺかわん
 
 FlutterによるiOS / Android向けPeerCastクライアント。
 

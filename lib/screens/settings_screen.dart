@@ -210,7 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             title: const Text('ライセンス'),
             onTap: () =>
-                showLicensePage(context: context, applicationName: 'PeerCast'),
+                showLicensePage(context: context, applicationName: 'ぺかわん'),
           ),
         ],
       ),

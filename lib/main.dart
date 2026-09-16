@@ -48,7 +48,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: settings,
     builder: (context, _) => MaterialApp(
-      title: 'PeerCast',
+      title: 'ぺかわん',
       locale: const Locale('ja'),
       supportedLocales: const [Locale('ja')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,

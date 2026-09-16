@@ -14,7 +14,7 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "jp.peercast.peercast_app"
+    namespace = "jp.valaishasu.pecaone"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -25,7 +25,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "jp.peercast.peercast_app"
+        applicationId = "jp.valaishasu.pecaone"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
