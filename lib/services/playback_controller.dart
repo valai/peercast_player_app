@@ -13,6 +13,7 @@ import '../models/channel.dart';
 import 'app_settings.dart';
 import 'peercast_engine.dart';
 import 'playback_audio_session.dart';
+import 'playback_background.dart';
 import 'runtime_environment.dart';
 import 'playback_tuning.dart';
 import 'playback_startup.dart';
@@ -28,7 +29,9 @@ class PlaybackController extends ChangeNotifier {
     DateTime Function()? now,
     Future<bool> Function()? emulatorCheck,
     this.androidVideoFactory,
-  }) : isEmulator = emulatorCheck ?? RuntimeEnvironment.isEmulator,
+    PlaybackBackground? background,
+  }) : background = background ?? PlaybackBackground(),
+       isEmulator = emulatorCheck ?? RuntimeEnvironment.isEmulator,
        now = now ?? DateTime.now,
        engine = engine ?? PeerCastEngine(),
        checkConnectivity =
@@ -45,6 +48,7 @@ class PlaybackController extends ChangeNotifier {
                            : MPVLogLevel.error,
                      ),
                    )) {
+    this.background.onStop = () => unawaited(stop());
     network = (connectivityChanges ?? Connectivity().onConnectivityChanged)
         .listen((links) {
           if (active &&
@@ -70,12 +74,15 @@ class PlaybackController extends ChangeNotifier {
   final DateTime Function() now;
   final AppSettings settings;
   final EngineBackend engine;
+  final PlaybackBackground background;
   final _audioSession = PlaybackAudioSession();
   final Player? player;
   final Future<List<ConnectivityResult>> Function() checkConnectivity;
   final Future<Directory> Function() supportDirectory;
   late final VideoController video = VideoController(player!);
   final VideoPlayerController Function(Uri)? androidVideoFactory;
+  bool get usesAndroidVideo =>
+      Platform.isAndroid || androidVideoFactory != null;
   VideoPlayerController? androidVideo;
   bool _recoveringVideo = false;
   int _videoRetries = 0;
@@ -122,6 +129,8 @@ class PlaybackController extends ChangeNotifier {
     changed();
     try {
       if (!channel.playable) throw StateError('${channel.format} は再生対象外です');
+      await background.start(channel.name);
+      if (_disposed || ticket != _generation) return;
       final links = await checkConnectivity();
       if (_disposed || ticket != _generation) return;
       if (!links.contains(ConnectivityResult.wifi)) {
@@ -185,6 +194,7 @@ class PlaybackController extends ChangeNotifier {
           if (_disposed || ticket != _generation) return;
           snapshot = next;
           if (!next.running ||
+              (background.running && !next.listening) ||
               (requireOpenPort && next.firewall != 'reachable')) {
             await stop(message: portFailure());
             return;
@@ -243,7 +253,7 @@ class PlaybackController extends ChangeNotifier {
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
       if (_disposed || ticket != _generation) return;
-      if (Platform.isAndroid || androidVideoFactory != null) {
+      if (usesAndroidVideo) {
         await _openAndroidVideo(uri, ticket);
       } else {
         simulatorAudioUnavailable = await _audioSession.activate();
@@ -323,7 +333,11 @@ class PlaybackController extends ChangeNotifier {
     await previous?.dispose();
     if (!_isCurrent(ticket)) return;
     final output =
-        androidVideoFactory?.call(uri) ?? VideoPlayerController.networkUrl(uri);
+        androidVideoFactory?.call(uri) ??
+        VideoPlayerController.networkUrl(
+          uri,
+          videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: true),
+        );
     androidVideo = output;
     var ready = false;
     output.addListener(() {
@@ -433,6 +447,7 @@ class PlaybackController extends ChangeNotifier {
         if (kDebugMode) debugPrint('Audio session cleanup: $e');
       }
       await stoppingEngine;
+      await background.stop();
       snapshot = const EngineSnapshot();
       changed();
     });
@@ -446,8 +461,9 @@ class PlaybackController extends ChangeNotifier {
     unawaited(errors?.cancel());
     unawaited(logs?.cancel());
     unawaited(
-      stop().whenComplete(() async {
+      (active ? stop() : _cleanup).whenComplete(() async {
         await player?.dispose();
+        background.dispose();
       }),
     );
     super.dispose();

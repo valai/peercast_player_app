@@ -8,10 +8,12 @@ class PlaybackOverlay extends StatefulWidget {
     required this.child,
     required this.top,
     required this.bottom,
+    this.hidden = false,
   });
   final Widget child;
   final Widget top;
   final Widget bottom;
+  final bool hidden;
   @override
   State<PlaybackOverlay> createState() => _PlaybackOverlayState();
 }
@@ -45,9 +47,9 @@ class _PlaybackOverlayState extends State<PlaybackOverlay> {
   }
 
   Widget _panel(Widget child, {required bool top}) => IgnorePointer(
-    ignoring: !_visible,
+    ignoring: !_visible || widget.hidden,
     child: AnimatedOpacity(
-      opacity: _visible ? 1 : 0,
+      opacity: _visible && !widget.hidden ? 1 : 0,
       duration: _visible ? const Duration(milliseconds: 200) : Duration.zero,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -82,18 +84,20 @@ class _PlaybackOverlayState extends State<PlaybackOverlay> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            child: _panel(widget.top, top: true),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _panel(widget.bottom, top: false),
-          ),
+          if (!widget.hidden)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _panel(widget.top, top: true),
+            ),
+          if (!widget.hidden)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _panel(widget.bottom, top: false),
+            ),
         ],
       ),
     ),

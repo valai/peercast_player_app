@@ -72,6 +72,10 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
 // Allow debug builds without local signing secrets, but never emit an unsigned release.
 gradle.taskGraph.whenReady {
     if (!keystorePropertiesFile.exists() && allTasks.any {

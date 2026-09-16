@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:video_player/video_player.dart';
 
@@ -22,41 +21,133 @@ import 'thread_list_view.dart';
 import 'playback_overlay.dart';
 import 'broadcast_clock.dart';
 import 'viewer_count.dart';
+import 'playback_viewport.dart';
 
 class WatchScreen extends StatefulWidget {
-  const WatchScreen({super.key, required this.channel, required this.settings});
+  const WatchScreen({
+    super.key,
+    required this.channel,
+    required this.settings,
+    this.minimized = false,
+    this.onMinimize,
+    this.onRestore,
+    this.onClose,
+    this.onPipChanged,
+    this.controller,
+  });
   final Channel channel;
   final AppSettings settings;
+  final bool minimized;
+  final VoidCallback? onMinimize, onRestore, onClose;
+  final ValueChanged<bool>? onPipChanged;
+  final PlaybackController? controller;
   @override
-  State<WatchScreen> createState() => _WatchScreenState();
+  State<WatchScreen> createState() => WatchScreenState();
 }
 
-class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
-  late final PlaybackController playback = PlaybackController(
-    settings: widget.settings,
-  );
+class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
+  late final PlaybackController playback =
+      widget.controller ?? PlaybackController(settings: widget.settings);
   WebViewController? board;
   BoardTarget? target;
   String? boardError;
   bool loading = false;
   bool fullscreen = false;
+  Size _boardSize = const Size(400, 500);
+  bool _lastPip = false;
+  bool? _configuredPlaying;
+  double? _configuredRatio;
+  bool get inPip => playback.background.inPip;
+  bool get compact => widget.minimized || inPip;
+  Future<void> stop() => playback.stop();
+
+  void _playbackChanged() {
+    final output = playback.androidVideo;
+    final ready =
+        playback.active &&
+        playback.background.running &&
+        output?.value.isInitialized == true &&
+        output?.value.isPlaying == true;
+    final ratio = output?.value.aspectRatio ?? 16 / 9;
+    if (_configuredPlaying != ready || _configuredRatio != ratio) {
+      _configuredPlaying = ready;
+      _configuredRatio = ratio;
+      unawaited(
+        playback.background.configure(playing: ready, aspectRatio: ratio),
+      );
+    }
+  }
+
+  void _backgroundChanged() {
+    if (!mounted) return;
+    _playbackChanged();
+    if (_lastPip != inPip) {
+      _lastPip = inPip;
+      if (!inPip && playback.active) widget.onRestore?.call();
+      widget.onPipChanged?.call(inPip);
+    }
+    setState(() {});
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      _showNotice();
+    }
+  }
+
+  void _showNotice() {
+    final notice = playback.background.notice;
+    if (notice == null || !mounted) return;
+    playback.background.notice = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(notice)));
+      }
+    });
+  }
+
+  void minimize() {
+    if (!playback.active ||
+        playback.androidVideo?.value.isInitialized != true) {
+      return;
+    }
+    if (fullscreen) setFullscreen(false);
+    FocusScope.of(context).unfocus();
+    widget.onMinimize?.call();
+  }
 
   void setFullscreen(bool enabled) {
     setState(() => fullscreen = enabled);
     unawaited(setPlaybackFullscreen(enabled));
   }
 
+  void _updateOrientations() {
+    unawaited(
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        if (!widget.minimized) ...[
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+      ]),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant WatchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.minimized != widget.minimized) _updateOrientations();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]),
-    );
+    playback.addListener(_playbackChanged);
+    playback.background.addListener(_backgroundChanged);
+    playback.background.onStop = () {
+      unawaited(playback.stop());
+      widget.onClose?.call();
+    };
+    _updateOrientations();
     unawaited(playback.start(widget.channel));
     target = BoardResolver.resolve(
       widget.settings.threads[widget.channel.key] ?? widget.channel.contact,
@@ -110,9 +201,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+    if (state == AppLifecycleState.resumed) _showNotice();
+    if (playback.background.shouldStopForLifecycle(state)) {
       unawaited(playback.stop(message: 'バックグラウンドに移動したため停止しました'));
     }
   }
@@ -120,6 +210,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    playback.removeListener(_playbackChanged);
+    playback.background.removeListener(_backgroundChanged);
     unawaited(
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
     );
@@ -139,6 +231,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       return ColoredBox(
         color: Colors.black,
         child: PlaybackOverlay(
+          hidden: compact,
           top: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -188,6 +281,17 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   ),
                   BroadcastClock(channel: widget.channel),
                   const Spacer(),
+                  if (playback.usesAndroidVideo && widget.onMinimize != null)
+                    IconButton(
+                      tooltip: 'ミニプレイヤーでチャンネル一覧へ',
+                      color: Colors.white,
+                      icon: const Icon(Icons.picture_in_picture_alt),
+                      onPressed:
+                          playback.active &&
+                              playback.androidVideo?.value.isInitialized == true
+                          ? minimize
+                          : null,
+                    ),
                   IconButton(
                     tooltip: playback.muted ? 'ミュート解除' : 'ミュート',
                     color: Colors.white,
@@ -211,20 +315,28 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           child: Stack(
             children: [
               Positioned.fill(
-                child: Platform.isAndroid
-                    ? (playback.androidVideo?.value.isInitialized == true
-                          ? Center(
-                              child: AspectRatio(
-                                aspectRatio:
-                                    playback.androidVideo!.value.aspectRatio,
-                                child: VideoPlayer(playback.androidVideo!),
-                              ),
-                            )
-                          : const SizedBox.shrink())
-                    : Video(
-                        controller: playback.video,
-                        controls: NoVideoControls,
-                      ),
+                child: PlaybackViewport(
+                  inPip: compact,
+                  aspectRatio:
+                      playback.androidVideo?.value.aspectRatio ??
+                      ((playback.player?.state.width ?? 16) /
+                          (playback.player?.state.height ?? 9)),
+                  onSwipeDown: playback.usesAndroidVideo ? minimize : null,
+                  child: playback.usesAndroidVideo
+                      ? (playback.androidVideo?.value.isInitialized == true
+                            ? Center(
+                                child: AspectRatio(
+                                  aspectRatio:
+                                      playback.androidVideo!.value.aspectRatio,
+                                  child: VideoPlayer(playback.androidVideo!),
+                                ),
+                              )
+                            : const SizedBox.shrink())
+                      : Video(
+                          controller: playback.video,
+                          controls: NoVideoControls,
+                        ),
+                ),
               ),
               if (playback.opening)
                 const Center(child: CircularProgressIndicator()),
@@ -255,6 +367,42 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white),
                     ),
+                  ),
+                ),
+              if (widget.minimized && !inPip)
+                Positioned.fill(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onRestore,
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: IconButton(
+                          tooltip: '視聴を終了',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black54,
+                          ),
+                          color: Colors.white,
+                          icon: const Icon(Icons.close),
+                          onPressed: widget.onClose,
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        child: IconButton(
+                          tooltip: '再生画面に戻る',
+                          color: Colors.white,
+                          icon: const Icon(Icons.open_in_full),
+                          onPressed: widget.onRestore,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -346,7 +494,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         );
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !fullscreen,
+    canPop: widget.onClose == null && !fullscreen,
     onPopInvokedWithResult: (didPop, _) {
       if (didPop) {
         // dispose runs only after the reverse route animation. Stop output
@@ -354,26 +502,43 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         unawaited(playback.stop());
       } else if (fullscreen) {
         setFullscreen(false);
+      } else {
+        widget.onClose?.call();
       }
     },
     child: Scaffold(
       backgroundColor: fullscreen ? Colors.black : null,
-      appBar: fullscreen ? null : AppBar(title: Text(widget.channel.name)),
+      appBar: fullscreen || compact
+          ? null
+          : AppBar(
+              leading: widget.onClose == null
+                  ? null
+                  : BackButton(onPressed: widget.onClose),
+              title: Text(widget.channel.name),
+            ),
       body: SafeArea(
-        top: !fullscreen,
-        bottom: !fullscreen,
-        left: !fullscreen,
-        right: !fullscreen,
+        top: !fullscreen && !compact,
+        bottom: !fullscreen && !compact,
+        left: !fullscreen && !compact,
+        right: !fullscreen && !compact,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final landscape =
                 MediaQuery.orientationOf(context) == Orientation.landscape;
             final width = constraints.maxWidth;
             final height = constraints.maxHeight;
-            final videoWidth = fullscreen || !landscape ? width : width * .6;
-            final videoHeight = fullscreen || landscape
+            final videoWidth = fullscreen || compact || !landscape
+                ? width
+                : width * .6;
+            final videoHeight = fullscreen || compact || landscape
                 ? height
                 : (width * 9 / 16).clamp(0.0, height * .5);
+            if (!fullscreen && !compact) {
+              _boardSize = Size(
+                landscape ? width - videoWidth : width,
+                landscape ? height : height - videoHeight,
+              );
+            }
             // Stable sibling positions preserve both native views during rotation,
             // keyboard resizing and fullscreen transitions.
             return Stack(
@@ -390,7 +555,16 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   top: landscape ? 0 : videoHeight,
                   right: 0,
                   bottom: 0,
-                  child: Offstage(offstage: fullscreen, child: boardView()),
+                  child: Offstage(
+                    offstage: fullscreen || compact,
+                    child: OverflowBox(
+                      minWidth: _boardSize.width,
+                      maxWidth: _boardSize.width,
+                      minHeight: _boardSize.height,
+                      maxHeight: _boardSize.height,
+                      child: boardView(),
+                    ),
+                  ),
                 ),
               ],
             );
