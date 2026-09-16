@@ -18,6 +18,7 @@ import '../models/channel.dart';
 import '../services/app_settings.dart';
 import '../services/board_resolver.dart';
 import 'thread_view.dart';
+import 'thread_list_view.dart';
 import 'playback_overlay.dart';
 import 'broadcast_clock.dart';
 import 'viewer_count.dart';
@@ -60,7 +61,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     target = BoardResolver.resolve(
       widget.settings.threads[widget.channel.key] ?? widget.channel.contact,
     );
-    if (target != null && !target!.isThread) {
+    if (target != null &&
+        !target!.isThread &&
+        target!.type == BoardType.other) {
       loadBoard(target!.uri);
     }
   }
@@ -168,7 +171,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
             children: [
               if (playback.active)
                 Text(
-                  '${playback.snapshot.relays}接続 · 外部送信 ${(playback.snapshot.bytesOut / 1048576).toStringAsFixed(1)} MB · $reachability',
+                  '${playback.snapshot.relays}接続 · 外部送信 ${playback.snapshot.outboundMbps.toStringAsFixed(2)} Mbps · $reachability',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 10),
@@ -260,17 +263,6 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       );
     },
   );
-  Uri boardHome(BoardTarget value) {
-    final p = value.threadParts;
-    return value.uri.replace(
-      path: value.type == BoardType.shitaraba
-          ? '/${p[2]}/${p[3]}/'
-          : '${value.pathPrefix}/${p[2]}/',
-      query: '',
-      fragment: '',
-    );
-  }
-
   void selectThread(BoardTarget next) {
     setState(() => target = next);
     widget.settings.threads[widget.channel.key] = next.uri.toString();
@@ -288,11 +280,18 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       ? ThreadView(
           key: ValueKey(target!.uri.toString()),
           target: target!,
+          onNextThread: selectThread,
           onBack: () {
-            final home = boardHome(target!);
+            final home = target!.boardUri;
             setState(() => target = BoardResolver.resolve(home.toString()));
-            loadBoard(home);
+            if (target!.type == BoardType.other) loadBoard(home);
           },
+        )
+      : target != null && target!.type != BoardType.other
+      ? ThreadListView(
+          key: ValueKey(target!.boardUri),
+          target: target!,
+          onSelected: selectThread,
         )
       : Column(
           children: [

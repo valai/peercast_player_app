@@ -9,10 +9,17 @@ import 'thread_web_view.dart';
 import '../services/board_resolver.dart';
 
 class ThreadView extends StatefulWidget {
-  const ThreadView({super.key, required this.target, this.client, this.onBack});
+  const ThreadView({
+    super.key,
+    required this.target,
+    this.client,
+    this.onBack,
+    this.onNextThread,
+  });
   final BoardTarget target;
   final BoardClient? client;
   final VoidCallback? onBack;
+  final ValueChanged<BoardTarget>? onNextThread;
   @override
   State<ThreadView> createState() => _ThreadViewState();
 }
@@ -63,7 +70,7 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    if (composing) toBottom();
+    if (foreground && (composing || autoScroll)) toBottom();
   }
 
   int scrollRequest = 0;
@@ -115,6 +122,27 @@ class _ThreadViewState extends State<ThreadView> with WidgetsBindingObserver {
           thread = next;
           newPostNumbers = {...newPostNumbers, ...added};
         });
+      }
+      // Only a transition observed while reading should trigger navigation.
+      // Opening an already completed thread must leave it available to read.
+      if (previous != null &&
+          !previous.posts.any((post) => post.number >= 1000) &&
+          next.posts.any((post) => post.number >= 1000) &&
+          widget.onNextThread != null &&
+          !sending &&
+          !composing &&
+          message.text.isEmpty) {
+        final following = await client.nextThread(widget.target, next);
+        if (!mounted) return;
+        if (following != null &&
+            foreground &&
+            !sending &&
+            !composing &&
+            message.text.isEmpty &&
+            openedUrl == null) {
+          widget.onNextThread!(following);
+          return;
+        }
       }
       // Follow new replies on both manual and periodic refreshes when enabled.
       if (autoScroll &&

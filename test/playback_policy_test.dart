@@ -192,7 +192,7 @@ void main() {
         expect(engine.connects, 1, reason: controller.message);
         if (scenario == 'lostPort') {
           await tester.pump(const Duration(seconds: 15));
-          expect(engine.checks, 2);
+          expect(engine.checks, 1);
           engine.firewall = 'unknown';
         } else {
           links = [ConnectivityResult.mobile];

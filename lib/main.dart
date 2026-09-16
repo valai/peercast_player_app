@@ -68,9 +68,11 @@ class ChannelScreen extends StatefulWidget {
   State<ChannelScreen> createState() => _ChannelScreenState();
 }
 
-class _ChannelScreenState extends State<ChannelScreen> {
+class _ChannelScreenState extends State<ChannelScreen>
+    with WidgetsBindingObserver {
   late final directory = widget.directory ?? ChannelDirectory();
   List<Channel> channels = [];
+  Set<String> orderingFavorites = {};
   Map<String, String> errors = {};
   bool loading = false;
   final searchFocus = FocusNode();
@@ -80,9 +82,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.settings.addListener(changed);
     searchFocus.addListener(changed);
     refresh();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) refresh();
   }
 
   void changed() {
@@ -91,11 +99,14 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   Future<void> refresh() async {
     final request = ++generation;
+    final favorites = Set<String>.of(widget.settings.favorites);
     setState(() => loading = true);
     final result = await directory.refresh(List.of(widget.settings.sources));
     if (!mounted || request != generation) return;
     setState(() {
       channels = result.channels;
+      // Keep row positions stable until the next directory refresh.
+      orderingFavorites = favorites;
       errors = result.errors;
       loading = false;
     });
@@ -103,6 +114,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.settings.removeListener(changed);
     searchFocus.dispose();
     directory.dispose();
@@ -123,6 +135,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if (tab != 2) {
       final originalOrder = {for (var i = 0; i < list.length; i++) list[i]: i};
       list.sort((a, b) {
+        final byFavorite = (orderingFavorites.contains(b.key) ? 1 : 0)
+            .compareTo(orderingFavorites.contains(a.key) ? 1 : 0);
+        if (byFavorite != 0) return byFavorite;
+        final byStatus = (a.isStatus ? 1 : 0).compareTo(b.isStatus ? 1 : 0);
+        if (byStatus != 0) return byStatus;
         final aCount = a.listeners < 0 ? -1 : a.listeners;
         final bCount = b.listeners < 0 ? -1 : b.listeners;
         final byListeners = bCount.compareTo(aCount);
@@ -133,7 +150,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PeerCast'),
+        title: const Text('ぺかわん'),
         actions: [
           if (tab == 2)
             IconButton(
@@ -236,7 +253,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
                           vertical: 4,
                         ),
                         child: ListTile(
-                          title: Text(c.name),
+                          title: Text(
+                            c.name,
+                            style: const TextStyle(color: Colors.blue),
+                          ),
                           subtitle: Text(
                             '${c.sourceName} · ${c.format} · ${c.bitrate} kbps · ${c.broadcastDurationLabel()} · ${c.listeners < 0 ? "視聴者数非公開" : "${c.listeners}人"}\n${[c.genre, c.description, c.comment].where((v) => v.isNotEmpty).join(" / ")}',
                             maxLines: 3,
