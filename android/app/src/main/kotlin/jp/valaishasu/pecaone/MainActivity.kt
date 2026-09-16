@@ -1,4 +1,4 @@
-package jp.peercast.peercast_app
+package jp.valaishasu.pecaone
 
 import android.os.Build
 import android.view.View
