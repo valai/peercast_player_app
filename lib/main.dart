@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'models/channel.dart';
 import 'services/app_settings.dart';
 import 'services/channel_directory.dart';
+import 'services/screenshot_channel_directory.dart';
 import 'screens/settings_screen.dart';
 import 'screens/keyboard_dismiss.dart';
 import 'screens/watch_screen.dart';
@@ -26,7 +27,17 @@ Future<void> main() async {
     ], await rootBundle.loadString('assets/licenses/boringssl.txt'));
   });
   final settings = await AppSettings.load();
-  runApp(MyApp(settings: settings));
+  // スクショ撮影後は false に戻すと通常のチャンネル一覧に戻る。
+  const screenshotMode = bool.fromEnvironment(
+    'SCREENSHOT_MODE',
+    defaultValue: false,
+  );
+  runApp(
+    MyApp(
+      settings: settings,
+      directory: screenshotMode ? ScreenshotChannelDirectory() : null,
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
