@@ -14,6 +14,7 @@
 #include "channel.h"
 #include "servmgr.h"
 #include "stats.h"
+#include "external_traffic.h"
 #include "pcp.h"
 #include "yplist.h"
 #include "json.hpp"
@@ -222,6 +223,7 @@ EXPORT int pc_start(const char* path, int port, int relays) {
     servMgr->autoServe = true; servMgr->autoConnect = false;
     servMgr->rootHost.clear(); servMgr->restartServer = false;
     stats.clear();
+    mobileExternalTraffic.clear();
     portState = 0; checkingPort = false;
     { std::lock_guard<std::mutex> g(probeMutex); portCheckError.clear(); }
     relaysAllowed = true; running = true;
@@ -425,7 +427,8 @@ EXPORT const char* pc_snapshot() {
         if (s->type == Servent::T_SERVER && s->status == Servent::S_LISTENING) j["listening"] = true;
       }
       j["relays"] = servMgr->numStreams(Servent::T_RELAY, true);
-      j["bytesOut"] = stats.getCurrent(Stats::BYTESOUT) - stats.getCurrent(Stats::LOCALBYTESOUT);
+      j["bytesOut"] = mobileExternalTraffic.sent();
+      j["outboundMbps"] = mobileExternalTraffic.mbps();
       {
         std::lock_guard<std::mutex> pg(probeMutex);
         if (checkingPort && std::chrono::steady_clock::now() - portCheckStarted > std::chrono::seconds(30)) {

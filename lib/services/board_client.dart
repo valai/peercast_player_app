@@ -33,6 +33,13 @@ class BoardThread {
   final List<BoardPost> posts;
 }
 
+class BoardThreadEntry {
+  const BoardThreadEntry(this.target, this.title, this.count);
+  final BoardTarget target;
+  final String title;
+  final int count;
+}
+
 class BoardClient {
   BoardClient({http.Client? client}) : client = client ?? http.Client();
   final http.Client client;
@@ -93,6 +100,86 @@ class BoardClient {
     }
     if (posts.isEmpty) throw const FormatException('レスを取得できませんでした');
     return BoardThread(title, posts);
+  }
+
+  static List<BoardThreadEntry> parseSubjects(String text, BoardTarget target) {
+    final entries = <BoardThreadEntry>[];
+    for (final line in const LineSplitter().convert(text)) {
+      final match = RegExp(r'^(\d+)\.(?:dat|cgi)(?:<>|,)(.*)\s*\((\d+)\)\s*$')
+          .firstMatch(line);
+      if (match == null) continue;
+      entries.add(
+        BoardThreadEntry(
+          target.threadTarget(match[1]!),
+          boardText(match[2]!),
+          int.parse(match[3]!),
+        ),
+      );
+    }
+    return entries;
+  }
+
+  Future<List<BoardThreadEntry>> fetchThreads(BoardTarget target) async {
+    final home = target.boardUri;
+    final path = '${home.path.replaceFirst(RegExp(r'/+$'), '')}/subject.txt';
+    final response = await client
+        .get(target.endpoint(path))
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}');
+    }
+    final text = await decode(response, target);
+    final entries = parseSubjects(text, target);
+    if (entries.isEmpty && text.trim().isNotEmpty) {
+      throw const FormatException('スレッド一覧の応答形式が不正です');
+    }
+    return entries;
+  }
+
+  Future<BoardTarget?> nextThread(
+    BoardTarget current,
+    BoardThread thread,
+  ) async {
+    final entries = await fetchThreads(current);
+    final candidates = entries
+        .where(
+          (e) =>
+              e.count < 1000 &&
+              int.parse(e.target.threadKey) > int.parse(current.threadKey),
+        )
+        .toList();
+    for (final post in thread.posts.reversed.take(100)) {
+      for (final match in RegExp(
+        r'https?://[^\s<>"「」]+',
+      ).allMatches(post.body)) {
+        final linked = BoardResolver.resolve(match[0]!);
+        if (linked == null || !linked.isThread) continue;
+        for (final entry in candidates) {
+          if (linked.boardUri == current.boardUri &&
+              linked.threadKey == entry.target.threadKey) {
+            return entry.target;
+          }
+        }
+      }
+    }
+    String series(String title) => title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[０-９]'), '#')
+        .replaceAll(
+          RegExp(r'[0-9]+|part|その|スレッド|スレ|[\s#＃()（）【】\[\]・._ー-]'),
+          '',
+        );
+    final name = series(thread.title);
+    final matching =
+        candidates
+            .where((e) => name.isNotEmpty && series(e.title) == name)
+            .toList()
+          ..sort(
+            (a, b) =>
+                int.parse(a.target.threadKey)
+                    .compareTo(int.parse(b.target.threadKey)),
+          );
+    return matching.isEmpty ? null : matching.first.target;
   }
 
   Future<BoardThread> fetch(BoardTarget target) async {

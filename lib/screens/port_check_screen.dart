@@ -81,10 +81,8 @@ class _PortCheckScreenState extends State<PortCheckScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
-      unawaited(listener.stop('バックグラウンドに移動したため待受を停止しました'));
+    if (state == AppLifecycleState.detached) {
+      unawaited(listener.stop('アプリが終了したため待受を停止しました'));
     }
   }
 
@@ -128,7 +126,6 @@ class _PortCheckScreenState extends State<PortCheckScreen>
                         await listener.stop();
                       } else {
                         await listener.start();
-                        if (listener.listening) await open('port_update.php');
                       }
                     },
               child: Text(listener.listening ? '待受を停止' : '待受を再開'),

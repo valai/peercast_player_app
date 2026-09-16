@@ -94,6 +94,7 @@ class Channel {
   }
 
   String get key => '$sourceId:$id';
+  bool get isStatus => id == '00000000000000000000000000000000';
   bool get playable =>
       format.toUpperCase() == 'FLV' &&
       tracker.isNotEmpty &&

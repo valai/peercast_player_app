@@ -214,7 +214,7 @@ class PlaybackController extends ChangeNotifier {
           await _checkAndroidProgress(uri, ticket);
           if (!_isCurrent(ticket)) return;
           if (requireOpenPort &&
-              now().difference(lastPortCheck).inSeconds >= 15) {
+              now().difference(lastPortCheck) >= const Duration(minutes: 5)) {
             lastPortCheck = now();
             await engine.checkPort(channel);
           }

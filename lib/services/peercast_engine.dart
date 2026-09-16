@@ -14,6 +14,7 @@ class EngineSnapshot {
     this.playing = false,
     this.relays = 0,
     this.bytesOut = 0,
+    this.outboundMbps = 0,
     this.firewall = 'unknown',
     this.status = 'stopped',
     this.portCheckError = '',
@@ -25,13 +26,18 @@ class EngineSnapshot {
     playing: j['playing'] == true,
     relays: (j['relays'] as num?)?.toInt() ?? 0,
     bytesOut: (j['bytesOut'] as num?)?.toInt() ?? 0,
+    outboundMbps: (j['outboundMbps'] as num?)?.toDouble() ?? 0,
     firewall: j['firewall'] as String? ?? 'unknown',
     status: j['status'] as String? ?? 'stopped',
     portCheckError: j['portCheckError'] as String? ?? '',
     connectionError: j['connectionError'] as String? ?? '',
   );
   final bool running, playing, listening;
-  final int relays, bytesOut;
+  final int relays;
+  // Cumulative external socket bytes since engine start, including protocol
+  // traffic but excluding local playback. This is not a bytes/second rate.
+  final int bytesOut;
+  final double outboundMbps;
   final String firewall, status, portCheckError, connectionError;
 
   String get connectionTimeoutMessage {
