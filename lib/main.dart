@@ -90,6 +90,43 @@ class _ChannelScreenState extends State<ChannelScreen>
   String search = '';
   int tab = 0;
   int generation = 0;
+  Channel? watching;
+  bool minimized = false, inPip = false;
+  bool switching = false;
+  GlobalKey<WatchScreenState> watchKey = GlobalKey<WatchScreenState>();
+
+  Future<void> openChannel(Channel channel) async {
+    if (switching) return;
+    if (watching?.key == channel.key) {
+      setState(() => minimized = false);
+      return;
+    }
+    switching = true;
+    await watchKey.currentState?.stop();
+    if (!mounted) return;
+    setState(() {
+      watchKey = GlobalKey<WatchScreenState>();
+      watching = channel;
+      minimized = false;
+      inPip = false;
+      switching = false;
+    });
+  }
+
+  Future<void> closePlayer() async {
+    if (switching) return;
+    switching = true;
+    await watchKey.currentState?.stop();
+    if (!mounted) return;
+    setState(() {
+      watching = null;
+      minimized = false;
+      inPip = false;
+      switching = false;
+    });
+    await refresh();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -159,7 +196,7 @@ class _ChannelScreenState extends State<ChannelScreen>
             : originalOrder[a]!.compareTo(originalOrder[b]!);
       });
     }
-    return Scaffold(
+    final directoryView = Scaffold(
       appBar: AppBar(
         title: const Text('ぺかわん'),
         actions: [
@@ -303,16 +340,7 @@ class _ChannelScreenState extends State<ChannelScreen>
                               }
                             }
                             if (context.mounted) {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute<void>(
-                                  builder: (_) => WatchScreen(
-                                    channel: c,
-                                    settings: widget.settings,
-                                  ),
-                                ),
-                              );
-                              if (mounted) await refresh();
+                              await openChannel(c);
                             }
                           },
                         ),
@@ -342,6 +370,40 @@ class _ChannelScreenState extends State<ChannelScreen>
           NavigationDestination(icon: Icon(Icons.history), label: '閲覧履歴'),
         ],
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final small = minimized && !inPip;
+        final width = (constraints.maxWidth * .55).clamp(160.0, 280.0);
+        return Stack(
+          children: [
+            Positioned.fill(child: directoryView),
+            if (watching != null)
+              Positioned(
+                right: small ? 12 : 0,
+                bottom: small ? 96 + MediaQuery.paddingOf(context).bottom : 0,
+                width: small ? width : constraints.maxWidth,
+                height: small ? width * 9 / 16 : constraints.maxHeight,
+                child: WatchScreen(
+                  key: watchKey,
+                  channel: watching!,
+                  settings: widget.settings,
+                  minimized: minimized,
+                  onMinimize: () => setState(() => minimized = true),
+                  onRestore: () => setState(() => minimized = false),
+                  onClose: closePlayer,
+                  onPipChanged: (value) {
+                    if (!mounted) return;
+                    if (value) {
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    }
+                    setState(() => inPip = value);
+                  },
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
