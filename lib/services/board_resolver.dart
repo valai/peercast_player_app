@@ -1,6 +1,6 @@
 import '../models/channel.dart';
 
-enum BoardType { jpnkn, shitaraba, dmdbs, other }
+enum BoardType { jpnkn, shitaraba, dmdbs, komokomo, other }
 
 class BoardTarget {
   const BoardTarget(this.uri, this.type, this.isThread);
@@ -41,6 +41,7 @@ class BoardTarget {
     BoardType.jpnkn => 'JPNKN',
     BoardType.shitaraba => 'したらば',
     BoardType.dmdbs => 'DMDBS',
+    BoardType.komokomo => 'こもこも',
     BoardType.other => 'コンタクト',
   };
 }
@@ -59,11 +60,13 @@ class BoardResolver {
         ? BoardType.dmdbs
         : host == 'bbs.jpnkn.com'
         ? BoardType.jpnkn
+        : host == 'komokomo.ddns.net'
+        ? BoardType.komokomo
         : ['jbbs.shitaraba.net', 'jbbs.livedoor.jp'].contains(host)
         ? BoardType.shitaraba
         : BoardType.other;
     final thread = switch (type) {
-      BoardType.jpnkn => RegExp(
+      BoardType.jpnkn || BoardType.komokomo => RegExp(
         r'^/test/read\.cgi/[^/]+/\d+(?:/|$)',
       ).hasMatch(uri.path),
       BoardType.shitaraba => RegExp(
