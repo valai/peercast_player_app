@@ -57,6 +57,11 @@ function(mobile_patch name)
     string(REPLACE "#ifdef _GNU_SOURCE" "#if 0" content "${content}")
     string(REPLACE "#ifndef __APPLE__" "#if 1" content "${content}")
     string(REPLACE "signal(SIGABRT, SIG_IGN);" "// Do not alter the host application's SIGABRT handler." content "${content}")
+    if(APPLE)
+      string(REPLACE "retval = system(cmdLine.c_str());"
+        "retval = -1; // iOS cannot launch shell commands."
+        content "${content}")
+    endif()
   elseif(name STREQUAL "core/common/servmgr.cpp")
     string(REPLACE "servMgr->channelDirectory->update();" "// Directory retrieval is owned by Dart." content "${content}")
     string(REPLACE "servMgr->uptestServiceRegistry->update();" "// No external upload test service on mobile." content "${content}")
@@ -80,7 +85,17 @@ mobile_patch(core/common/sslclientsocket.cpp)
 file(GLOB SOURCES "${PEERCAST_ROOT}/core/common/*.cpp" "${PEERCAST_ROOT}/core/unix/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX "/(usubprog)\\.cpp$")
 add_library(peercast_mobile SHARED ${SOURCES} bridge.cpp subprocess_disabled.cpp)
-target_include_directories(peercast_mobile PRIVATE "${CMAKE_CURRENT_LIST_DIR}" "${PEERCAST_ROOT}/core/common" "${PEERCAST_ROOT}/core/unix")
+target_include_directories(peercast_mobile PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+if(APPLE)
+  # Apple's SDK includes <_string.h>. Search the copied PeerCast headers only
+  # after SDK headers so its own _string.h does not shadow the libc header.
+  target_compile_options(peercast_mobile PRIVATE
+    "-idirafter${PEERCAST_ROOT}/core/common"
+    "-idirafter${PEERCAST_ROOT}/core/unix")
+else()
+  target_include_directories(peercast_mobile PRIVATE
+    "${PEERCAST_ROOT}/core/common" "${PEERCAST_ROOT}/core/unix")
+endif()
 target_compile_definitions(peercast_mobile PRIVATE _UNIX PEERCAST_MOBILE)
 target_link_libraries(peercast_mobile PRIVATE ssl crypto)
 if(ANDROID)

@@ -22,7 +22,12 @@ class ViewerCount extends StatefulWidget {
 }
 
 class _ViewerCountState extends State<ViewerCount> with WidgetsBindingObserver {
-  late final directory = widget.directory ?? ChannelDirectory();
+  late final directory =
+      widget.directory ??
+      ChannelDirectory(
+        useWindowsForSp: () =>
+            widget.settings.playbackSource == PlaybackSource.windows,
+      );
   late int listeners = widget.channel.listeners;
   Timer? timer;
   bool fetching = false;
