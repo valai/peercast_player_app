@@ -17,6 +17,8 @@ import 'playback_background.dart';
 import 'runtime_environment.dart';
 import 'playback_tuning.dart';
 import 'playback_startup.dart';
+import 'hls_loopback_proxy.dart';
+import 'windows_mobile_api.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({
@@ -30,7 +32,12 @@ class PlaybackController extends ChangeNotifier {
     Future<bool> Function()? emulatorCheck,
     this.androidVideoFactory,
     PlaybackBackground? background,
+    WindowsCredentialStore? credentialStore,
+    WindowsMobileApi Function(WindowsCredentials)? windowsApiFactory,
+    this.confirmWindowsSwitch,
   }) : background = background ?? PlaybackBackground(),
+       credentialStore = credentialStore ?? WindowsCredentialStore(),
+       windowsApiFactory = windowsApiFactory ?? WindowsMobileApi.new,
        isEmulator = emulatorCheck ?? RuntimeEnvironment.isEmulator,
        now = now ?? DateTime.now,
        engine = engine ?? PeerCastEngine(),
@@ -52,13 +59,13 @@ class PlaybackController extends ChangeNotifier {
     network = (connectivityChanges ?? Connectivity().onConnectivityChanged)
         .listen((links) {
           if (active &&
+              !_windowsMode &&
               (links.contains(ConnectivityResult.none) ||
                   !links.contains(ConnectivityResult.wifi))) {
             unawaited(stop(message: '回線が変わったため視聴・リレーを停止しました'));
           }
         });
     logs = player?.stream.log.listen((entry) {
-      if (kDebugMode) debugPrint('Playback: $entry');
       if (active &&
           entry.level == 'fatal' &&
           (entry.prefix.startsWith('vo/') ||
@@ -67,12 +74,23 @@ class PlaybackController extends ChangeNotifier {
       }
     });
     errors = player?.stream.error.listen((e) {
-      if (active) unawaited(stop(message: '再生できませんでした: $e'));
+      if (active) {
+        if (_windowsMode) {
+          _windowsDisconnected = true;
+          message = 'Windowsとの再接続を待っています…';
+          changed();
+        } else {
+          unawaited(stop(message: '再生できませんでした: $e'));
+        }
+      }
     });
   }
   final Future<bool> Function() isEmulator;
   final DateTime Function() now;
   final AppSettings settings;
+  final WindowsCredentialStore credentialStore;
+  final WindowsMobileApi Function(WindowsCredentials) windowsApiFactory;
+  final Future<bool> Function()? confirmWindowsSwitch;
   final EngineBackend engine;
   final PlaybackBackground background;
   final _audioSession = PlaybackAudioSession();
@@ -94,6 +112,15 @@ class PlaybackController extends ChangeNotifier {
   late final StreamSubscription<PlayerLog>? logs;
   EngineSnapshot snapshot = const EngineSnapshot();
   String message = '停止中';
+  bool _windowsMode = false;
+  bool get windowsMode => _windowsMode;
+  WindowsSessionStatus? windowsStatus;
+  WindowsMobileApi? _windowsApi;
+  HlsLoopbackProxy? _windowsProxy;
+  bool _ownsWindowsSession = false;
+  bool _windowsDisconnected = false;
+  bool _windowsReopening = false;
+  String? _windowsSessionId;
   bool muted = false;
 
   Future<void> toggleMute() async {
@@ -120,6 +147,11 @@ class PlaybackController extends ChangeNotifier {
     final ticket = _generation;
     await cleanup;
     if (_disposed || ticket != _generation) return;
+    _windowsMode = settings.playbackSource == PlaybackSource.windows;
+    if (_windowsMode) {
+      await _startWindows(channel, ticket);
+      return;
+    }
     active = true;
     opening = true;
     final port = settings.port;
@@ -253,37 +285,7 @@ class PlaybackController extends ChangeNotifier {
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
       if (_disposed || ticket != _generation) return;
-      if (usesAndroidVideo) {
-        await _openAndroidVideo(uri, ticket);
-      } else {
-        simulatorAudioUnavailable = await _audioSession.activate();
-        if (_disposed || ticket != _generation) return;
-        final nativePlayer = player!.platform;
-        if (nativePlayer is NativePlayer) {
-          await configureNativePlayback(
-            nativePlayer.setProperty,
-            silentSimulator: simulatorAudioUnavailable,
-          );
-        }
-        if (_disposed || ticket != _generation) return;
-        await player!.setVolume(muted ? 0 : 100);
-        final startup = PlaybackStartup(player!.stream.position);
-        _startup = startup;
-        try {
-          // Subscribe before open: it completes when the load is queued, not
-          // when decoding starts. Wait for both, with errors observed together.
-          final results = await Future.wait<Object?>([
-            startup.ready,
-            player!
-                .open(Media(uri.toString()))
-                .timeout(const Duration(seconds: 30)),
-          ], eagerError: true);
-          if (results.first != true) return;
-        } finally {
-          startup.cancel();
-          if (identical(_startup, startup)) _startup = null;
-        }
-      }
+      await _openVideo(uri, ticket);
       if (_disposed || ticket != _generation) return;
       playbackStarted = true;
       opening = false;
@@ -293,6 +295,214 @@ class PlaybackController extends ChangeNotifier {
       if (!_disposed && ticket == _generation) {
         await stop(message: e is StateError ? e.message : '$e');
       }
+    }
+  }
+
+  Future<void> _openVideo(Uri uri, int ticket) async {
+    if (usesAndroidVideo) {
+      await _openAndroidVideo(uri, ticket);
+      return;
+    }
+    simulatorAudioUnavailable = await _audioSession.activate();
+    if (!_isCurrent(ticket)) return;
+    final nativePlayer = player!.platform;
+    if (nativePlayer is NativePlayer) {
+      await configureNativePlayback(
+        nativePlayer.setProperty,
+        silentSimulator: simulatorAudioUnavailable,
+      );
+    }
+    if (!_isCurrent(ticket)) return;
+    await player!.setVolume(muted ? 0 : 100);
+    final startup = PlaybackStartup(player!.stream.position);
+    _startup = startup;
+    try {
+      final results = await Future.wait<Object?>([
+        startup.ready,
+        player!
+            .open(Media(uri.toString()))
+            .timeout(const Duration(seconds: 30)),
+      ], eagerError: true);
+      if (results.first != true) return;
+    } finally {
+      startup.cancel();
+      if (identical(_startup, startup)) _startup = null;
+    }
+  }
+
+  Future<void> _startWindows(Channel channel, int ticket) async {
+    active = true;
+    opening = true;
+    message = 'Windowsに接続中…';
+    changed();
+    try {
+      if (!channel.playable) throw StateError('${channel.format} は再生対象外です');
+      final credentials = await credentialStore.read();
+      if (!_isCurrent(ticket)) return;
+      if (credentials == null) throw StateError('設定からWindowsとペアリングしてください');
+      final api = windowsApiFactory(credentials);
+      _windowsApi = api;
+      await background.start(channel.name);
+      if (!_isCurrent(ticket)) return;
+      String sessionId;
+      try {
+        sessionId = await api.start(channel);
+      } on WindowsApiException catch (error) {
+        if (error.statusCode != 409) rethrow;
+        final replace =
+            await (confirmWindowsSwitch?.call() ?? Future.value(false));
+        if (!_isCurrent(ticket)) return;
+        if (!replace) throw StateError('Windowsで別の番組を視聴中です');
+        await api.stop();
+        if (!_isCurrent(ticket)) return;
+        sessionId = await api.start(channel);
+      }
+      if (!_isCurrent(ticket)) return;
+      _ownsWindowsSession = true;
+      _windowsSessionId = sessionId;
+      message = 'Windowsで映像を準備中…';
+      changed();
+      final deadline = now().add(const Duration(seconds: 60));
+      WindowsSessionStatus status;
+      while (true) {
+        status = await api.status();
+        if (!_isCurrent(ticket)) return;
+        windowsStatus = status;
+        changed();
+        if (status.sessionId != sessionId) {
+          _ownsWindowsSession = false;
+          throw StateError('Windows側の視聴が切り替わりました');
+        }
+        if (status.state == 'ready') break;
+        if (status.state == 'failed') {
+          throw StateError(status.error ?? 'Windowsで変換できませんでした');
+        }
+        if (status.state != 'starting' || now().isAfter(deadline)) {
+          throw StateError('Windowsで映像を準備できませんでした');
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (!_isCurrent(ticket)) return;
+      }
+      final proxy = await HlsLoopbackProxy.bind(credentials, status);
+      if (!_isCurrent(ticket)) {
+        await proxy.close();
+        return;
+      }
+      _windowsProxy = proxy;
+      final uri = proxy.playlist(status, settings.windowsQuality.name);
+      await _openVideo(uri, ticket);
+      if (!_isCurrent(ticket)) return;
+      opening = false;
+      message = 'Windows経由で視聴中';
+      changed();
+      timer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => unawaited(_pollWindows(ticket)),
+      );
+    } on WindowsApiException catch (error) {
+      if (_isCurrent(ticket)) {
+        if (error.statusCode == 401) await credentialStore.delete();
+        await stop(message: error.message);
+      }
+    } catch (error) {
+      if (_isCurrent(ticket)) {
+        await stop(
+          message: error is StateError ? error.message : 'Windows経由で再生できませんでした',
+        );
+      }
+    }
+  }
+
+  Future<void> _pollWindows(int ticket) async {
+    if (!_isCurrent(ticket) || _polling || _windowsApi == null) return;
+    _polling = true;
+    try {
+      final status = await _windowsApi!.status();
+      if (!_isCurrent(ticket)) return;
+      windowsStatus = status;
+      if (status.sessionId != _windowsSessionId || status.state == 'idle') {
+        _ownsWindowsSession = false;
+        await stop(message: 'Windows側の視聴が終了しました。再度開始してください');
+        return;
+      }
+      if (status.state == 'failed') {
+        await stop(message: status.error ?? 'Windowsで変換が終了しました');
+        return;
+      }
+      if (_windowsDisconnected &&
+          status.state == 'ready' &&
+          !_windowsReopening) {
+        _windowsReopening = true;
+        try {
+          final uri = _windowsProxy!.playlist(
+            status,
+            settings.windowsQuality.name,
+          );
+          await _openVideo(uri, ticket);
+          if (!_isCurrent(ticket)) return;
+          _windowsDisconnected = false;
+          opening = false;
+          message = 'Windows経由で視聴中';
+        } finally {
+          _windowsReopening = false;
+        }
+      }
+      changed();
+    } on WindowsApiException catch (error) {
+      if (!_isCurrent(ticket)) return;
+      if (error.statusCode == 401) {
+        await credentialStore.delete();
+        await stop(message: error.message);
+      } else {
+        _windowsDisconnected = true;
+        opening = true;
+        message = 'Windowsとの再接続を待っています…';
+        changed();
+      }
+    } catch (_) {
+      if (_isCurrent(ticket)) {
+        _windowsDisconnected = true;
+        opening = true;
+        message = 'Windowsとの再接続を待っています…';
+        changed();
+      }
+    } finally {
+      _polling = false;
+    }
+  }
+
+  Future<void> changeWindowsQuality(WindowsQuality quality) async {
+    final previous = settings.windowsQuality;
+    settings.windowsQuality = quality;
+    try {
+      await settings.save();
+    } catch (_) {
+      settings.windowsQuality = previous;
+      message = '画質設定を保存できませんでした';
+      changed();
+      return;
+    }
+    final ticket = _generation;
+    final status = windowsStatus;
+    final proxy = _windowsProxy;
+    if (!_isCurrent(ticket) ||
+        !_windowsMode ||
+        status == null ||
+        proxy == null) {
+      return;
+    }
+    try {
+      opening = true;
+      changed();
+      final uri = proxy.playlist(status, quality.name);
+      await _openVideo(uri, ticket);
+      if (_isCurrent(ticket)) {
+        opening = false;
+        message = 'Windows経由で視聴中';
+        changed();
+      }
+    } catch (_) {
+      if (_isCurrent(ticket)) await stop(message: '画質を切り替えられませんでした');
     }
   }
 
@@ -347,9 +557,17 @@ class PlaybackController extends ChangeNotifier {
           _isCurrent(ticket) &&
           identical(androidVideo, output) &&
           output.value.hasError) {
-        unawaited(
-          _recoverAndroidVideo(uri, ticket, output.value.errorDescription),
-        );
+        if (_windowsMode) {
+          _windowsDisconnected = true;
+          opening = true;
+          message = 'Windowsとの再接続を待っています…';
+          changed();
+          unawaited(_pollWindows(ticket));
+        } else {
+          unawaited(
+            _recoverAndroidVideo(uri, ticket, output.value.errorDescription),
+          );
+        }
       }
     });
     await output.initialize().timeout(const Duration(seconds: 30));
@@ -411,6 +629,17 @@ class PlaybackController extends ChangeNotifier {
 
   Future<void> stop({String message = '停止中'}) {
     ++_generation;
+    final wasWindows = _windowsMode;
+    final windowsApi = _windowsApi;
+    final windowsProxy = _windowsProxy;
+    final ownedWindowsSession = _ownsWindowsSession;
+    _windowsMode = false;
+    _windowsApi = null;
+    _windowsProxy = null;
+    _ownsWindowsSession = false;
+    _windowsDisconnected = false;
+    _windowsSessionId = null;
+    windowsStatus = null;
     _recoveringVideo = false;
     _videoRetries = 0;
     _videoStartedAt = null;
@@ -428,9 +657,20 @@ class PlaybackController extends ChangeNotifier {
       // Stop networking and media together; native cleanup may take time.
       final stoppingEngine = () async {
         try {
-          await engine.stop();
+          if (wasWindows) {
+            if (ownedWindowsSession) await windowsApi?.stop();
+            await windowsProxy?.close();
+            windowsApi?.dispose();
+          } else {
+            await engine.stop();
+          }
         } catch (e) {
-          this.message = '停止処理を確認できませんでした: $e';
+          if (!wasWindows) this.message = '停止処理を確認できませんでした: $e';
+        } finally {
+          if (wasWindows) {
+            await windowsProxy?.close();
+            windowsApi?.dispose();
+          }
         }
       }();
       try {

@@ -5,6 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/channel.dart';
 
+enum PlaybackSource { direct, windows }
+
+enum WindowsQuality { auto, high, medium, low }
+
 class AppSettings extends ChangeNotifier {
   AppSettings(this._prefs);
   final SharedPreferences _prefs;
@@ -24,6 +28,8 @@ class AppSettings extends ChangeNotifier {
   int get maxRelays => _maxRelays;
   set maxRelays(int value) => _maxRelays = value.clamp(1, 16);
   int port = 7145;
+  PlaybackSource playbackSource = PlaybackSource.direct;
+  WindowsQuality windowsQuality = WindowsQuality.auto;
   ThemeMode themeMode = ThemeMode.system;
   String? loadError;
   static Future<AppSettings> load() async {
@@ -48,6 +54,14 @@ class AppSettings extends ChangeNotifier {
           orElse: () => ThemeMode.system,
         );
         settings.port = (j['port'] as int).clamp(1024, 65535);
+        settings.playbackSource = PlaybackSource.values.firstWhere(
+          (value) => value.name == j['playbackSource'],
+          orElse: () => PlaybackSource.direct,
+        );
+        settings.windowsQuality = WindowsQuality.values.firstWhere(
+          (value) => value.name == j['windowsQuality'],
+          orElse: () => WindowsQuality.auto,
+        );
       } catch (_) {
         settings.sources = [];
         settings.loadError = '保存データを読み込めませんでした。YP設定を確認してください。';
@@ -69,6 +83,8 @@ class AppSettings extends ChangeNotifier {
         'threads': threads,
         'maxRelays': maxRelays,
         'port': port,
+        'playbackSource': playbackSource.name,
+        'windowsQuality': windowsQuality.name,
         'themeMode': themeMode.name,
       }),
     );

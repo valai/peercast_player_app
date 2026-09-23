@@ -47,7 +47,34 @@ class WatchScreen extends StatefulWidget {
 
 class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   late final PlaybackController playback =
-      widget.controller ?? PlaybackController(settings: widget.settings);
+      widget.controller ??
+      PlaybackController(
+        settings: widget.settings,
+        confirmWindowsSwitch: _confirmWindowsSwitch,
+      );
+
+  Future<bool> _confirmWindowsSwitch() async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Windowsの番組を切り替えますか？'),
+            content: const Text('現在Windowsで変換中の番組を停止し、選択した番組を開始します。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('キャンセル'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('切り替える'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   WebViewController? board;
   BoardTarget? target;
   String? boardError;
@@ -262,7 +289,21 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           bottom: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (playback.active)
+              if (playback.windowsMode && playback.opening)
+                Text(
+                  playback.message,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              if (playback.active && playback.windowsMode)
+                Text(
+                  playback.windowsStatus == null
+                      ? 'Windowsの状態を確認中'
+                      : '${playback.windowsStatus!.downstreamRelays}接続 · ${playback.windowsStatus!.relayReachable ? 'リレー可能' : 'リレー不可'} · ${playback.windowsStatus!.relayMessage}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              if (playback.active && !playback.windowsMode)
                 Text(
                   '${playback.snapshot.relays}接続 · 外部送信 ${playback.snapshot.outboundMbps.toStringAsFixed(2)} Mbps · $reachability',
                   maxLines: 1,
@@ -281,6 +322,31 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   ),
                   BroadcastClock(channel: widget.channel),
                   const Spacer(),
+                  if (playback.windowsMode)
+                    PopupMenuButton<WindowsQuality>(
+                      tooltip: '画質を変更',
+                      icon: const Icon(Icons.high_quality, color: Colors.white),
+                      onSelected: (value) =>
+                          unawaited(playback.changeWindowsQuality(value)),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: WindowsQuality.auto,
+                          child: Text('自動'),
+                        ),
+                        PopupMenuItem(
+                          value: WindowsQuality.high,
+                          child: Text('高'),
+                        ),
+                        PopupMenuItem(
+                          value: WindowsQuality.medium,
+                          child: Text('中'),
+                        ),
+                        PopupMenuItem(
+                          value: WindowsQuality.low,
+                          child: Text('低'),
+                        ),
+                      ],
+                    ),
                   if (playback.usesAndroidVideo && widget.onMinimize != null)
                     IconButton(
                       tooltip: 'ミニプレイヤーでチャンネル一覧へ',
