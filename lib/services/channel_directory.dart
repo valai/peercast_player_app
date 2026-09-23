@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/channel.dart';
+import 'windows_mobile_api.dart';
 
 class DirectoryResult {
   const DirectoryResult(this.channels, this.errors);
@@ -24,13 +25,22 @@ class ChannelDirectory {
     http.Client Function()? clientFactory,
     this.requestTimeout = const Duration(seconds: 15),
     this.retryDelay = const Duration(milliseconds: 300),
+    bool Function()? useWindowsForSp,
+    WindowsCredentialStore? credentialStore,
+    WindowsMobileApi Function(WindowsCredentials)? windowsApiFactory,
   }) : _sharedClient = client,
-       _clientFactory = clientFactory ?? http.Client.new;
+       _clientFactory = clientFactory ?? http.Client.new,
+       _useWindowsForSp = useWindowsForSp ?? (() => false),
+       _credentialStore = credentialStore ?? WindowsCredentialStore(),
+       _windowsApiFactory = windowsApiFactory ?? WindowsMobileApi.new;
   final http.Client? _sharedClient;
   final http.Client Function() _clientFactory;
+  final bool Function() _useWindowsForSp;
+  final WindowsCredentialStore _credentialStore;
+  final WindowsMobileApi Function(WindowsCredentials) _windowsApiFactory;
   final Duration requestTimeout, retryDelay;
   final _active = <http.Client>{};
-  final _cache = <(String, String), List<Channel>>{};
+  final _cache = <(String, String, bool), List<Channel>>{};
   bool _disposed = false;
   int _generation = 0;
 
@@ -67,6 +77,29 @@ class ChannelDirectory {
     }
   }
 
+  Future<List<Channel>> _fetchSpViaWindows(YellowPage source) async {
+    final credentials = await _credentialStore.read();
+    if (credentials == null) {
+      throw StateError('Windowsとペアリングしてください');
+    }
+    final api = _windowsApiFactory(credentials);
+    try {
+      final body = await api.fetchSpIndex().timeout(requestTimeout);
+      final channels = Channel.parse(body, source);
+      if (body.trim().isNotEmpty && channels.isEmpty) {
+        throw const FormatException('index.txtの形式ではありません');
+      }
+      return channels;
+    } finally {
+      api.dispose();
+    }
+  }
+
+  bool _viaWindows(YellowPage source) =>
+      _useWindowsForSp() &&
+      source.id == 'sp' &&
+      source.url == YellowPage.defaults.first.url;
+
   bool _retryable(Object error) =>
       error is http.ClientException ||
       error is TimeoutException ||
@@ -76,6 +109,7 @@ class ChannelDirectory {
     if (error is TimeoutException) return '応答がタイムアウトしました';
     if (error is http.ClientException) return '通信が途中で切断されたか、接続できませんでした';
     if (error is FormatException) return error.message;
+    if (error is StateError) return error.message;
     return error.toString();
   }
 
@@ -83,11 +117,12 @@ class ChannelDirectory {
     if (_disposed) return const DirectoryResult([], {});
     final generation = ++_generation;
     final enabled = sources.where((s) => s.enabled).toList();
-    final keys = enabled.map((s) => (s.id, s.url)).toSet();
+    final keys = enabled.map((s) => (s.id, s.url, _viaWindows(s))).toSet();
     _cache.removeWhere((key, _) => !keys.contains(key));
     final results = await Future.wait(
       enabled.map((source) async {
-        final key = (source.id, source.url);
+        final viaWindows = _viaWindows(source);
+        final key = (source.id, source.url, viaWindows);
         try {
           final uri = webUri(source.url);
           if (uri == null) {
@@ -95,7 +130,9 @@ class ChannelDirectory {
           }
           for (var attempt = 0; ; attempt++) {
             try {
-              final channels = await _fetch(source, uri);
+              final channels = viaWindows
+                  ? await _fetchSpViaWindows(source)
+                  : await _fetch(source, uri);
               if (!_disposed && generation == _generation) {
                 _cache[key] = channels;
               }

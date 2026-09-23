@@ -289,6 +289,31 @@ class WindowsMobileApi {
     }
   }
 
+  /// SP の判定を Windows の外部接続から受けた index.txt を返す。
+  Future<String> fetchSpIndex() async {
+    final response = await _request(() => _send('GET', '/api/v1/sp/index.txt'));
+    if (response.statusCode == 404) {
+      throw const WindowsApiException(
+        'Windowsアプリを更新してください（SP一覧取得に未対応です）',
+        statusCode: 404,
+      );
+    }
+    if (response.statusCode != 200) {
+      throw WindowsApiException(
+        'Windows経由でSPを取得できません (HTTP ${response.statusCode})',
+        statusCode: response.statusCode,
+      );
+    }
+    if (response.bodyBytes.length > 4 * 1024 * 1024) {
+      throw const WindowsApiException('SPの応答が大きすぎます');
+    }
+    try {
+      return utf8.decode(response.bodyBytes);
+    } on FormatException {
+      throw const WindowsApiException('SPの応答を読み取れませんでした');
+    }
+  }
+
   Future<void> stop() async {
     final response = await _request(
       () => _send('DELETE', '/api/v1/sessions/current'),

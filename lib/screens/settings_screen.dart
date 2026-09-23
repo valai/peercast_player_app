@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
 import 'port_check_screen.dart';
+import 'windows_sp_check_screen.dart';
 import 'upnp_screen.dart';
 import '../services/app_settings.dart';
 import '../services/upnp_service.dart';
@@ -309,14 +310,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.network_check),
-              title: const Text('SPでポート開放を確認'),
-              subtitle: Text('ポート ${s.port} で確認用の待受を開始します'),
+              title: Text(
+                s.playbackSource == PlaybackSource.windows
+                    ? 'Windows経由でSPを確認'
+                    : 'SPでポート開放を確認',
+              ),
+              subtitle: Text(
+                s.playbackSource == PlaybackSource.windows
+                    ? 'WindowsからSPの一覧を取得し、リレー待受状態を確認します'
+                    : 'ポート ${s.port} で確認用の待受を開始します',
+              ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      PortCheckScreen(port: s.port, relays: s.maxRelays),
+                  builder: (_) => s.playbackSource == PlaybackSource.windows
+                      ? const WindowsSpCheckScreen()
+                      : PortCheckScreen(port: s.port, relays: s.maxRelays),
                 ),
               ),
             ),

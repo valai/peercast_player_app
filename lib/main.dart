@@ -81,7 +81,12 @@ class ChannelScreen extends StatefulWidget {
 
 class _ChannelScreenState extends State<ChannelScreen>
     with WidgetsBindingObserver {
-  late final directory = widget.directory ?? ChannelDirectory();
+  late final directory =
+      widget.directory ??
+      ChannelDirectory(
+        useWindowsForSp: () =>
+            widget.settings.playbackSource == PlaybackSource.windows,
+      );
   List<Channel> channels = [];
   Set<String> orderingFavorites = {};
   Map<String, String> errors = {};

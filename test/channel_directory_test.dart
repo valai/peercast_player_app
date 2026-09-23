@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:peercast_app/models/channel.dart';
 import 'package:peercast_app/services/channel_directory.dart';
+import 'package:peercast_app/services/windows_mobile_api.dart';
 
 import 'widget_test.dart' show row;
 
@@ -23,6 +24,12 @@ class StreamClient extends http.BaseClient {
   void close() {
     closed = true;
   }
+}
+
+class _Store extends WindowsCredentialStore {
+  @override
+  Future<WindowsCredentials?> read() async =>
+      WindowsCredentials(Uri.parse('http://100.101.102.103:17444'), 'secret');
 }
 
 void main() {
@@ -117,6 +124,61 @@ void main() {
     for (final stream in streams) {
       await stream.close();
     }
+    directory.dispose();
+  });
+
+  test('Windows経由ではSPだけをWindows側から取得し、直接取得へ戻したらキャッシュを使い回さない', () async {
+    var viaWindows = true;
+    var windowsCalls = 0;
+    var directSpCalls = 0;
+    final directory = ChannelDirectory(
+      useWindowsForSp: () => viaWindows,
+      credentialStore: _Store(),
+      windowsApiFactory: (credentials) => WindowsMobileApi(
+        credentials,
+        client: MockClient((request) async {
+          expect(request.url.path, '/api/v1/sp/index.txt');
+          expect(request.headers['Authorization'], 'Bearer secret');
+          windowsCalls++;
+          return http.Response.bytes(utf8.encode(row(name: 'Windows SP')), 200);
+        }),
+      ),
+      client: MockClient((request) async {
+        if (request.url == Uri.parse(source.url)) directSpCalls++;
+        return http.Response.bytes(utf8.encode(row(name: '直接取得')), 200);
+      }),
+    );
+    final first = await directory.refresh(YellowPage.defaults);
+    expect(first.errors, isEmpty);
+    expect(first.channels.map((c) => c.name), ['Windows SP', '直接取得']);
+    expect(windowsCalls, 1);
+    expect(directSpCalls, 0);
+    viaWindows = false;
+    final second = await directory.refresh([source]);
+    expect(second.channels.single.name, '直接取得');
+    expect(directSpCalls, 1);
+    directory.dispose();
+  });
+
+  test('Windows側が未対応ならSPを端末から再取得せずエラーを表示する', () async {
+    var directCalls = 0;
+    final directory = ChannelDirectory(
+      useWindowsForSp: () => true,
+      credentialStore: _Store(),
+      retryDelay: Duration.zero,
+      windowsApiFactory: (credentials) => WindowsMobileApi(
+        credentials,
+        client: MockClient((_) async => http.Response('', 404)),
+      ),
+      client: MockClient((_) async {
+        directCalls++;
+        return http.Response.bytes(utf8.encode(row()), 200);
+      }),
+    );
+    final result = await directory.refresh([source]);
+    expect(result.channels, isEmpty);
+    expect(result.errors[source.name], contains('Windowsアプリを更新'));
+    expect(directCalls, 0);
     directory.dispose();
   });
 }
