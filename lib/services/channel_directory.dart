@@ -80,7 +80,7 @@ class ChannelDirectory {
   Future<List<Channel>> _fetchSpViaWindows(YellowPage source) async {
     final credentials = await _credentialStore.read();
     if (credentials == null) {
-      throw StateError('Windowsとペアリングしてください');
+      throw StateError('コネクトとペアリングしてください');
     }
     final api = _windowsApiFactory(credentials);
     try {

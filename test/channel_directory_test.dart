@@ -127,7 +127,7 @@ void main() {
     directory.dispose();
   });
 
-  test('Windows経由ではSPだけをWindows側から取得し、直接取得へ戻したらキャッシュを使い回さない', () async {
+  test('コネクト経由ではSPだけをコネクト側から取得し、直接取得へ戻したらキャッシュを使い回さない', () async {
     var viaWindows = true;
     var windowsCalls = 0;
     var directSpCalls = 0;
@@ -140,7 +140,7 @@ void main() {
           expect(request.url.path, '/api/v1/sp/index.txt');
           expect(request.headers['Authorization'], 'Bearer secret');
           windowsCalls++;
-          return http.Response.bytes(utf8.encode(row(name: 'Windows SP')), 200);
+          return http.Response.bytes(utf8.encode(row(name: 'コネクト SP')), 200);
         }),
       ),
       client: MockClient((request) async {
@@ -150,7 +150,7 @@ void main() {
     );
     final first = await directory.refresh(YellowPage.defaults);
     expect(first.errors, isEmpty);
-    expect(first.channels.map((c) => c.name), ['Windows SP', '直接取得']);
+    expect(first.channels.map((c) => c.name), ['コネクト SP', '直接取得']);
     expect(windowsCalls, 1);
     expect(directSpCalls, 0);
     viaWindows = false;
@@ -160,7 +160,7 @@ void main() {
     directory.dispose();
   });
 
-  test('Windows側が未対応ならSPを端末から再取得せずエラーを表示する', () async {
+  test('コネクト側が未対応ならSPを端末から再取得せずエラーを表示する', () async {
     var directCalls = 0;
     final directory = ChannelDirectory(
       useWindowsForSp: () => true,
@@ -177,7 +177,7 @@ void main() {
     );
     final result = await directory.refresh([source]);
     expect(result.channels, isEmpty);
-    expect(result.errors[source.name], contains('Windowsアプリを更新'));
+    expect(result.errors[source.name], contains('ぺかわん コネクトを更新'));
     expect(directCalls, 0);
     directory.dispose();
   });

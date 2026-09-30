@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../services/windows_mobile_api.dart';
 
-/// Windows から SP の一覧を取得し、同じ PC のリレー待受状態を確認する。
+/// コネクトから SP の一覧を取得し、同じ PC のリレー待受状態を確認する。
 class WindowsSpCheckScreen extends StatefulWidget {
   const WindowsSpCheckScreen({super.key});
 
@@ -34,12 +34,12 @@ class _WindowsSpCheckScreenState extends State<WindowsSpCheckScreen> {
     WindowsMobileApi? api;
     try {
       final credentials = await WindowsCredentialStore().read();
-      if (credentials == null) throw StateError('設定からWindowsとペアリングしてください');
+      if (credentials == null) throw StateError('設定からコネクトとペアリングしてください');
       api = WindowsMobileApi(credentials);
       final index = await api.fetchSpIndex();
       final channels = Channel.parse(index, YellowPage.defaults.first);
       if (index.trim().isNotEmpty && channels.isEmpty) {
-        throw const FormatException('Windowsから取得したSPの一覧形式が正しくありません');
+        throw const FormatException('コネクトから取得したSPの一覧形式が正しくありません');
       }
       final status = await api.status();
       if (!mounted) return;
@@ -65,18 +65,15 @@ class _WindowsSpCheckScreenState extends State<WindowsSpCheckScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Windows経由でSPを確認')),
+    appBar: AppBar(title: const Text('コネクト経由でSPを確認')),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
-          'WindowsからSPへアクセスしてチャンネル一覧を取得します。SPが確認する接続元はスマホではなくWindowsです。',
-        ),
+        const Text('コネクトからSPへアクセスしてチャンネル一覧を取得します。SPが確認する接続元はコネクトを実行しているPCです。'),
         const SizedBox(height: 16),
         if (checking) const LinearProgressIndicator(),
         if (count != null) Text('SPから取得したチャンネル: $count 件'),
-        if (relayMessage != null)
-          Text('WindowsのPeerCastStation: $relayMessage'),
+        if (relayMessage != null) Text('コネクト側のPeerCastStation: $relayMessage'),
         if (error != null)
           Text(
             error!,
@@ -84,7 +81,7 @@ class _WindowsSpCheckScreenState extends State<WindowsSpCheckScreen> {
           ),
         const SizedBox(height: 16),
         const Text(
-          'PeerCastStationの待受状態と、SP自身の「Port check」の判定は異なる場合があります。SPの詳細な判定や使用ポートの変更はWindows PCのブラウザでSPを開いて確認してください。',
+          'PeerCastStationの待受状態と、SP自身の「Port check」の判定は異なる場合があります。SPの詳細な判定や使用ポートの変更はコネクトを実行しているPCのブラウザでSPを開いて確認してください。',
         ),
         const SizedBox(height: 16),
         FilledButton(

@@ -58,8 +58,8 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Windowsの番組を切り替えますか？'),
-            content: const Text('現在Windowsで変換中の番組を停止し、選択した番組を開始します。'),
+            title: const Text('コネクトの番組を切り替えますか？'),
+            content: const Text('現在コネクトで変換中の番組を停止し、選択した番組を開始します。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -297,7 +297,7 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               if (playback.active && playback.windowsMode)
                 Text(
                   playback.windowsStatus == null
-                      ? 'Windowsの状態を確認中'
+                      ? 'コネクトの状態を確認中'
                       : '${playback.windowsStatus!.downstreamRelays}接続 · ${playback.windowsStatus!.relayReachable ? 'リレー可能' : 'リレー不可'} · ${playback.windowsStatus!.relayMessage}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
