@@ -7,7 +7,15 @@ import '../models/channel.dart';
 
 enum PlaybackSource { direct, windows }
 
-enum WindowsQuality { auto, high, medium, low }
+enum WindowsQuality {
+  auto('自動'),
+  high('1080p'),
+  medium('480p'),
+  low('240p');
+
+  const WindowsQuality(this.label);
+  final String label;
+}
 
 class AppSettings extends ChangeNotifier {
   AppSettings(this._prefs);

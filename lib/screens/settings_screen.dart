@@ -170,20 +170,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Windows経由の画質'),
               trailing: DropdownButton<WindowsQuality>(
                 value: s.windowsQuality,
-                items: const [
-                  DropdownMenuItem(
-                    value: WindowsQuality.auto,
-                    child: Text('自動'),
-                  ),
-                  DropdownMenuItem(
-                    value: WindowsQuality.high,
-                    child: Text('高'),
-                  ),
-                  DropdownMenuItem(
-                    value: WindowsQuality.medium,
-                    child: Text('中'),
-                  ),
-                  DropdownMenuItem(value: WindowsQuality.low, child: Text('低')),
+                items: [
+                  for (final quality in WindowsQuality.values)
+                    DropdownMenuItem(
+                      value: quality,
+                      child: Text(quality.label),
+                    ),
                 ],
                 onChanged: (value) async {
                   if (value == null) return;

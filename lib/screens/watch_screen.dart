@@ -248,7 +248,7 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   }
 
   Widget video() => ListenableBuilder(
-    listenable: playback,
+    listenable: Listenable.merge([playback, widget.settings]),
     builder: (context, _) {
       final reachability = switch (playback.snapshot.firewall) {
         'reachable' => '外部から接続可能',
@@ -325,27 +325,36 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   if (playback.windowsMode)
                     PopupMenuButton<WindowsQuality>(
                       tooltip: '画質を変更',
-                      icon: const Icon(Icons.high_quality, color: Colors.white),
+                      initialValue: widget.settings.windowsQuality,
                       onSelected: (value) =>
                           unawaited(playback.changeWindowsQuality(value)),
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: WindowsQuality.auto,
-                          child: Text('自動'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.high,
-                          child: Text('高'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.medium,
-                          child: Text('中'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.low,
-                          child: Text('低'),
-                        ),
+                      itemBuilder: (context) => [
+                        for (final quality in WindowsQuality.values)
+                          PopupMenuItem(
+                            value: quality,
+                            child: Text(quality.label),
+                          ),
                       ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.high_quality, color: Colors.white),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.settings.windowsQuality.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   if (playback.usesAndroidVideo && widget.onMinimize != null)
                     IconButton(
