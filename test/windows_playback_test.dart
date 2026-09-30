@@ -103,7 +103,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   for (final replace in [false, true]) {
-    test('Windowsの競合確認=$replace、端末リレーを起動しない', () async {
+    test('コネクトの競合確認=$replace、端末リレーを起動しない', () async {
       final settings = await AppSettings.load();
       settings.playbackSource = PlaybackSource.windows;
       final api = FakeWindowsApi(FakeStore().credentials, conflict: true);
@@ -131,7 +131,7 @@ void main() {
     });
   }
 
-  test('Windows側のセッションが切り替わっても新しい番組は停止しない', () async {
+  test('コネクト側のセッションが切り替わっても新しい番組は停止しない', () async {
     final settings = await AppSettings.load();
     settings.playbackSource = PlaybackSource.windows;
     final api = FakeWindowsApi(

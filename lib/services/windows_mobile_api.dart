@@ -34,7 +34,7 @@ class PairPayload {
         (uri.path.isNotEmpty && uri.path != '/') ||
         uri.hasQuery ||
         uri.hasFragment) {
-      throw const FormatException('Windowsの接続先が正しくありません');
+      throw const FormatException('コネクトの接続先が正しくありません');
     }
     final parts = uri.host.split('.').map(int.tryParse).toList();
     if (parts.length != 4 ||
@@ -185,11 +185,11 @@ class WindowsMobileApi {
     } on WindowsApiException {
       rethrow;
     } on SocketException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     } on TimeoutException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     } on http.ClientException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     } finally {
       api.dispose();
     }
@@ -225,7 +225,7 @@ class WindowsMobileApi {
       final response = await send().timeout(const Duration(seconds: 10));
       if (response.statusCode == 401) {
         throw const WindowsApiException(
-          'Windowsとの登録が無効です。再ペアリングしてください',
+          'コネクトとの登録が無効です。再ペアリングしてください',
           statusCode: 401,
         );
       }
@@ -233,11 +233,11 @@ class WindowsMobileApi {
     } on WindowsApiException {
       rethrow;
     } on SocketException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     } on TimeoutException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     } on http.ClientException {
-      throw const WindowsApiException('Windowsアプリに接続できません。Tailscaleを確認してください');
+      throw const WindowsApiException('ぺかわん コネクトに接続できません。Tailscaleを確認してください');
     }
   }
 
@@ -251,7 +251,7 @@ class WindowsMobileApi {
     );
     if (response.statusCode == 409) {
       throw const WindowsApiException(
-        'Windowsでは別の番組を視聴中です',
+        'コネクトでは別の番組を視聴中です',
         statusCode: 409,
         code: 'session_busy',
       );
@@ -289,18 +289,18 @@ class WindowsMobileApi {
     }
   }
 
-  /// SP の判定を Windows の外部接続から受けた index.txt を返す。
+  /// コネクトを実行しているPCの外部接続でSPの判定を受けた index.txt を返す。
   Future<String> fetchSpIndex() async {
     final response = await _request(() => _send('GET', '/api/v1/sp/index.txt'));
     if (response.statusCode == 404) {
       throw const WindowsApiException(
-        'Windowsアプリを更新してください（SP一覧取得に未対応です）',
+        'ぺかわん コネクトを更新してください（SP一覧取得に未対応です）',
         statusCode: 404,
       );
     }
     if (response.statusCode != 200) {
       throw WindowsApiException(
-        'Windows経由でSPを取得できません (HTTP ${response.statusCode})',
+        'コネクト経由でSPを取得できません (HTTP ${response.statusCode})',
         statusCode: response.statusCode,
       );
     }
@@ -320,7 +320,7 @@ class WindowsMobileApi {
     );
     if (response.statusCode != 204) {
       throw WindowsApiException(
-        'Windowsの視聴を終了できません (HTTP ${response.statusCode})',
+        'コネクトの視聴を終了できません (HTTP ${response.statusCode})',
       );
     }
   }

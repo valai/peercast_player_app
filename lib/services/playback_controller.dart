@@ -77,7 +77,7 @@ class PlaybackController extends ChangeNotifier {
       if (active) {
         if (_windowsMode) {
           _windowsDisconnected = true;
-          message = 'Windowsとの再接続を待っています…';
+          message = 'コネクトとの再接続を待っています…';
           changed();
         } else {
           unawaited(stop(message: '再生できませんでした: $e'));
@@ -333,13 +333,13 @@ class PlaybackController extends ChangeNotifier {
   Future<void> _startWindows(Channel channel, int ticket) async {
     active = true;
     opening = true;
-    message = 'Windowsに接続中…';
+    message = 'コネクトに接続中…';
     changed();
     try {
       if (!channel.playable) throw StateError('${channel.format} は再生対象外です');
       final credentials = await credentialStore.read();
       if (!_isCurrent(ticket)) return;
-      if (credentials == null) throw StateError('設定からWindowsとペアリングしてください');
+      if (credentials == null) throw StateError('設定からコネクトとペアリングしてください');
       final api = windowsApiFactory(credentials);
       _windowsApi = api;
       await background.start(channel.name);
@@ -352,7 +352,7 @@ class PlaybackController extends ChangeNotifier {
         final replace =
             await (confirmWindowsSwitch?.call() ?? Future.value(false));
         if (!_isCurrent(ticket)) return;
-        if (!replace) throw StateError('Windowsで別の番組を視聴中です');
+        if (!replace) throw StateError('コネクトで別の番組を視聴中です');
         await api.stop();
         if (!_isCurrent(ticket)) return;
         sessionId = await api.start(channel);
@@ -360,7 +360,7 @@ class PlaybackController extends ChangeNotifier {
       if (!_isCurrent(ticket)) return;
       _ownsWindowsSession = true;
       _windowsSessionId = sessionId;
-      message = 'Windowsで映像を準備中…';
+      message = 'コネクトで映像を準備中…';
       changed();
       final deadline = now().add(const Duration(seconds: 60));
       WindowsSessionStatus status;
@@ -371,14 +371,14 @@ class PlaybackController extends ChangeNotifier {
         changed();
         if (status.sessionId != sessionId) {
           _ownsWindowsSession = false;
-          throw StateError('Windows側の視聴が切り替わりました');
+          throw StateError('コネクト側の視聴が切り替わりました');
         }
         if (status.state == 'ready') break;
         if (status.state == 'failed') {
-          throw StateError(status.error ?? 'Windowsで変換できませんでした');
+          throw StateError(status.error ?? 'コネクトで変換できませんでした');
         }
         if (status.state != 'starting' || now().isAfter(deadline)) {
-          throw StateError('Windowsで映像を準備できませんでした');
+          throw StateError('コネクトで映像を準備できませんでした');
         }
         await Future<void>.delayed(const Duration(seconds: 1));
         if (!_isCurrent(ticket)) return;
@@ -393,7 +393,7 @@ class PlaybackController extends ChangeNotifier {
       await _openVideo(uri, ticket);
       if (!_isCurrent(ticket)) return;
       opening = false;
-      message = 'Windows経由で視聴中';
+      message = 'コネクト経由で視聴中';
       changed();
       timer = Timer.periodic(
         const Duration(seconds: 5),
@@ -407,7 +407,7 @@ class PlaybackController extends ChangeNotifier {
     } catch (error) {
       if (_isCurrent(ticket)) {
         await stop(
-          message: error is StateError ? error.message : 'Windows経由で再生できませんでした',
+          message: error is StateError ? error.message : 'コネクト経由で再生できませんでした',
         );
       }
     }
@@ -422,11 +422,11 @@ class PlaybackController extends ChangeNotifier {
       windowsStatus = status;
       if (status.sessionId != _windowsSessionId || status.state == 'idle') {
         _ownsWindowsSession = false;
-        await stop(message: 'Windows側の視聴が終了しました。再度開始してください');
+        await stop(message: 'コネクト側の視聴が終了しました。再度開始してください');
         return;
       }
       if (status.state == 'failed') {
-        await stop(message: status.error ?? 'Windowsで変換が終了しました');
+        await stop(message: status.error ?? 'コネクトで変換が終了しました');
         return;
       }
       if (_windowsDisconnected &&
@@ -442,7 +442,7 @@ class PlaybackController extends ChangeNotifier {
           if (!_isCurrent(ticket)) return;
           _windowsDisconnected = false;
           opening = false;
-          message = 'Windows経由で視聴中';
+          message = 'コネクト経由で視聴中';
         } finally {
           _windowsReopening = false;
         }
@@ -456,14 +456,14 @@ class PlaybackController extends ChangeNotifier {
       } else {
         _windowsDisconnected = true;
         opening = true;
-        message = 'Windowsとの再接続を待っています…';
+        message = 'コネクトとの再接続を待っています…';
         changed();
       }
     } catch (_) {
       if (_isCurrent(ticket)) {
         _windowsDisconnected = true;
         opening = true;
-        message = 'Windowsとの再接続を待っています…';
+        message = 'コネクトとの再接続を待っています…';
         changed();
       }
     } finally {
@@ -498,7 +498,7 @@ class PlaybackController extends ChangeNotifier {
       await _openVideo(uri, ticket);
       if (_isCurrent(ticket)) {
         opening = false;
-        message = 'Windows経由で視聴中';
+        message = 'コネクト経由で視聴中';
         changed();
       }
     } catch (_) {
@@ -560,7 +560,7 @@ class PlaybackController extends ChangeNotifier {
         if (_windowsMode) {
           _windowsDisconnected = true;
           opening = true;
-          message = 'Windowsとの再接続を待っています…';
+          message = 'コネクトとの再接続を待っています…';
           changed();
           unawaited(_pollWindows(ticket));
         } else {

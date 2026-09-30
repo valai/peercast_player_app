@@ -58,8 +58,8 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Windowsの番組を切り替えますか？'),
-            content: const Text('現在Windowsで変換中の番組を停止し、選択した番組を開始します。'),
+            title: const Text('コネクトの番組を切り替えますか？'),
+            content: const Text('現在コネクトで変換中の番組を停止し、選択した番組を開始します。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -248,7 +248,7 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   }
 
   Widget video() => ListenableBuilder(
-    listenable: playback,
+    listenable: Listenable.merge([playback, widget.settings]),
     builder: (context, _) {
       final reachability = switch (playback.snapshot.firewall) {
         'reachable' => '外部から接続可能',
@@ -297,7 +297,7 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               if (playback.active && playback.windowsMode)
                 Text(
                   playback.windowsStatus == null
-                      ? 'Windowsの状態を確認中'
+                      ? 'コネクトの状態を確認中'
                       : '${playback.windowsStatus!.downstreamRelays}接続 · ${playback.windowsStatus!.relayReachable ? 'リレー可能' : 'リレー不可'} · ${playback.windowsStatus!.relayMessage}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -325,27 +325,36 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   if (playback.windowsMode)
                     PopupMenuButton<WindowsQuality>(
                       tooltip: '画質を変更',
-                      icon: const Icon(Icons.high_quality, color: Colors.white),
+                      initialValue: widget.settings.windowsQuality,
                       onSelected: (value) =>
                           unawaited(playback.changeWindowsQuality(value)),
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: WindowsQuality.auto,
-                          child: Text('自動'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.high,
-                          child: Text('高'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.medium,
-                          child: Text('中'),
-                        ),
-                        PopupMenuItem(
-                          value: WindowsQuality.low,
-                          child: Text('低'),
-                        ),
+                      itemBuilder: (context) => [
+                        for (final quality in WindowsQuality.values)
+                          PopupMenuItem(
+                            value: quality,
+                            child: Text(quality.label),
+                          ),
                       ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.high_quality, color: Colors.white),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.settings.windowsQuality.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   if (playback.usesAndroidVideo && widget.onMinimize != null)
                     IconButton(

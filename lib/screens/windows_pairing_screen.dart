@@ -51,13 +51,13 @@ class _WindowsPairingScreenState extends State<WindowsPairingScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Windowsとペアリング')),
+    appBar: AppBar(title: const Text('コネクトとペアリング')),
     body: Column(
       children: [
         const Padding(
           padding: EdgeInsets.all(16),
           child: Text(
-            'Windowsアプリで「ペアリングQRを作成」を押し、5分以内に読み取ってください。両端末でTailscaleに接続してください。',
+            'ぺかわん コネクトで「ペアリングQRを作成」を押し、5分以内に読み取ってください。両端末でTailscaleに接続してください。',
           ),
         ),
         Expanded(

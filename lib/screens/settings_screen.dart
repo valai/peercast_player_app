@@ -128,7 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(),
             ListTile(
               title: const Text('視聴方法'),
-              subtitle: const Text('Windows経由ではTailscaleを使い、携帯回線でも視聴できます。'),
+              subtitle: const Text('コネクト経由ではTailscaleを使い、携帯回線でも視聴できます。'),
               trailing: DropdownButton<PlaybackSource>(
                 value: s.playbackSource,
                 items: const [
@@ -138,7 +138,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   DropdownMenuItem(
                     value: PlaybackSource.windows,
-                    child: Text('Windows経由'),
+                    child: Text('コネクト経由'),
                   ),
                 ],
                 onChanged: (value) async {
@@ -150,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.qr_code_scanner),
-              title: Text(paired == true ? 'Windowsを再ペアリング' : 'Windowsとペアリング'),
+              title: Text(paired == true ? 'コネクトを再ペアリング' : 'コネクトとペアリング'),
               subtitle: Text(
                 paired == null
                     ? '確認中…'
@@ -167,23 +167,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: removePairing,
               ),
             ListTile(
-              title: const Text('Windows経由の画質'),
+              title: const Text('コネクト経由の画質'),
               trailing: DropdownButton<WindowsQuality>(
                 value: s.windowsQuality,
-                items: const [
-                  DropdownMenuItem(
-                    value: WindowsQuality.auto,
-                    child: Text('自動'),
-                  ),
-                  DropdownMenuItem(
-                    value: WindowsQuality.high,
-                    child: Text('高'),
-                  ),
-                  DropdownMenuItem(
-                    value: WindowsQuality.medium,
-                    child: Text('中'),
-                  ),
-                  DropdownMenuItem(value: WindowsQuality.low, child: Text('低')),
+                items: [
+                  for (final quality in WindowsQuality.values)
+                    DropdownMenuItem(
+                      value: quality,
+                      child: Text(quality.label),
+                    ),
                 ],
                 onChanged: (value) async {
                   if (value == null) return;
@@ -312,12 +304,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: const Icon(Icons.network_check),
               title: Text(
                 s.playbackSource == PlaybackSource.windows
-                    ? 'Windows経由でSPを確認'
+                    ? 'コネクト経由でSPを確認'
                     : 'SPでポート開放を確認',
               ),
               subtitle: Text(
                 s.playbackSource == PlaybackSource.windows
-                    ? 'WindowsからSPの一覧を取得し、リレー待受状態を確認します'
+                    ? 'コネクトからSPの一覧を取得し、リレー待受状態を確認します'
                     : 'ポート ${s.port} で確認用の待受を開始します',
               ),
               trailing: const Icon(Icons.chevron_right),
