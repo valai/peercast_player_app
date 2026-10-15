@@ -8,6 +8,7 @@ import 'models/channel.dart';
 import 'services/app_settings.dart';
 import 'services/channel_directory.dart';
 import 'services/screenshot_channel_directory.dart';
+import 'services/sp_port_status_refresher.dart';
 import 'screens/settings_screen.dart';
 import 'screens/keyboard_dismiss.dart';
 import 'screens/watch_screen.dart';
@@ -86,7 +87,16 @@ class _ChannelScreenState extends State<ChannelScreen>
       ChannelDirectory(
         useWindowsForSp: () =>
             widget.settings.playbackSource == PlaybackSource.windows,
+        refreshSpPortStatus: () async {
+          if (widget.settings.playbackSource == PlaybackSource.windows) return;
+          await spPortStatusRefresher!.refresh(
+            port: widget.settings.port,
+            relays: widget.settings.maxRelays,
+          );
+        },
       );
+  late final SpPortStatusRefresher? spPortStatusRefresher =
+      widget.directory == null ? SpPortStatusRefresher() : null;
   List<Channel> channels = [];
   Set<String> orderingFavorites = {};
   Map<String, String> errors = {};
@@ -170,6 +180,7 @@ class _ChannelScreenState extends State<ChannelScreen>
     WidgetsBinding.instance.removeObserver(this);
     widget.settings.removeListener(changed);
     searchFocus.dispose();
+    spPortStatusRefresher?.dispose();
     directory.dispose();
     super.dispose();
   }

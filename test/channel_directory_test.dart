@@ -59,6 +59,44 @@ void main() {
     expect(clients.every((c) => c.closed), isTrue);
     directory.dispose();
   });
+  test('SP一覧の取得前にポート状態を更新する', () async {
+    final calls = <String>[];
+    final directory = ChannelDirectory(
+      refreshSpPortStatus: () async {
+        calls.add('port status');
+      },
+      client: MockClient((_) async {
+        calls.add('channel list');
+        return http.Response.bytes(utf8.encode(row()), 200);
+      }),
+    );
+    await directory.refresh([source]);
+    expect(calls, ['port status', 'channel list']);
+    directory.dispose();
+  });
+  test('コネクト経由とSP以外では端末側のポート状態を更新しない', () async {
+    var preflights = 0;
+    final directory = ChannelDirectory(
+      useWindowsForSp: () => true,
+      refreshSpPortStatus: () async {
+        preflights++;
+      },
+      credentialStore: _Store(),
+      windowsApiFactory: (credentials) => WindowsMobileApi(
+        credentials,
+        client: MockClient(
+          (_) async =>
+              http.Response.bytes(utf8.encode(row(name: 'コネクト SP')), 200),
+        ),
+      ),
+      client: MockClient(
+        (_) async => http.Response.bytes(utf8.encode(row()), 200),
+      ),
+    );
+    await directory.refresh(YellowPage.defaults);
+    expect(preflights, 0);
+    directory.dispose();
+  });
   test('失敗時は前回一覧を明示して保持、URL変更では流用しない', () async {
     var fail = false;
     var calls = 0;
