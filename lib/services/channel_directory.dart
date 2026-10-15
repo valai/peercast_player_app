@@ -26,6 +26,7 @@ class ChannelDirectory {
     this.requestTimeout = const Duration(seconds: 15),
     this.retryDelay = const Duration(milliseconds: 300),
     bool Function()? useWindowsForSp,
+    this.refreshSpPortStatus,
     WindowsCredentialStore? credentialStore,
     WindowsMobileApi Function(WindowsCredentials)? windowsApiFactory,
   }) : _sharedClient = client,
@@ -36,6 +37,7 @@ class ChannelDirectory {
   final http.Client? _sharedClient;
   final http.Client Function() _clientFactory;
   final bool Function() _useWindowsForSp;
+  final Future<void> Function()? refreshSpPortStatus;
   final WindowsCredentialStore _credentialStore;
   final WindowsMobileApi Function(WindowsCredentials) _windowsApiFactory;
   final Duration requestTimeout, retryDelay;
@@ -127,6 +129,15 @@ class ChannelDirectory {
           final uri = webUri(source.url);
           if (uri == null) {
             throw const FormatException('HTTP/HTTPSのURLを指定してください');
+          }
+          if (!viaWindows &&
+              source.id == 'sp' &&
+              source.url == YellowPage.defaults.first.url) {
+            try {
+              await refreshSpPortStatus?.call();
+            } catch (_) {
+              // Keep channel retrieval available when the port preflight fails.
+            }
           }
           for (var attempt = 0; ; attempt++) {
             try {
