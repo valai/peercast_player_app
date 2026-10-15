@@ -329,6 +329,24 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                 ),
               Row(
                 children: [
+                  const Icon(Icons.volume_down, color: Colors.white, size: 20),
+                  Expanded(
+                    child: Slider(
+                      value: playback.volume,
+                      min: 0,
+                      max: 1,
+                      label: '${(playback.volume * 100).round()}%',
+                      activeColor: Colors.white,
+                      inactiveColor: Colors.white38,
+                      onChanged: (value) =>
+                          unawaited(playback.setVolume(value)),
+                    ),
+                  ),
+                  const Icon(Icons.volume_up, color: Colors.white, size: 20),
+                ],
+              ),
+              Row(
+                children: [
                   IconButton(
                     tooltip: playback.active ? '視聴を停止' : '視聴を開始',
                     color: Colors.white,
