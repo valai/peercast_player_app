@@ -74,6 +74,16 @@ class MyApp extends StatelessWidget {
   );
 }
 
+enum _ChannelSort {
+  recommended('おすすめ'),
+  name('チャンネル名'),
+  listeners('視聴者数'),
+  duration('配信時間');
+
+  const _ChannelSort(this.label);
+  final String label;
+}
+
 class ChannelScreen extends StatefulWidget {
   const ChannelScreen({super.key, required this.settings, this.directory});
   final AppSettings settings;
@@ -107,6 +117,8 @@ class _ChannelScreenState extends State<ChannelScreen>
   final searchFocus = FocusNode();
   String search = '';
   int tab = 0;
+  _ChannelSort channelSort = _ChannelSort.recommended;
+  bool sortAscending = false;
   int generation = 0;
   Channel? watching;
   bool minimized = false, inPip = false;
@@ -219,17 +231,50 @@ class _ChannelScreenState extends State<ChannelScreen>
         .toList();
     if (tab != 2) {
       final originalOrder = {for (var i = 0; i < list.length; i++) list[i]: i};
+      final now = DateTime.now();
       list.sort((a, b) {
-        final byFavorite = (orderingFavorites.contains(b.key) ? 1 : 0)
-            .compareTo(orderingFavorites.contains(a.key) ? 1 : 0);
-        if (byFavorite != 0) return byFavorite;
-        final byStatus = (a.isStatus ? 1 : 0).compareTo(b.isStatus ? 1 : 0);
-        if (byStatus != 0) return byStatus;
-        final aCount = a.listeners < 0 ? -1 : a.listeners;
-        final bCount = b.listeners < 0 ? -1 : b.listeners;
-        final byListeners = bCount.compareTo(aCount);
-        return byListeners != 0
-            ? byListeners
+        int comparison;
+        if (channelSort == _ChannelSort.recommended) {
+          final byFavorite = (orderingFavorites.contains(b.key) ? 1 : 0)
+              .compareTo(orderingFavorites.contains(a.key) ? 1 : 0);
+          if (byFavorite != 0) return byFavorite;
+          final byStatus = (a.isStatus ? 1 : 0).compareTo(b.isStatus ? 1 : 0);
+          if (byStatus != 0) return byStatus;
+          final aCount = a.listeners < 0 ? -1 : a.listeners;
+          final bCount = b.listeners < 0 ? -1 : b.listeners;
+          comparison = bCount.compareTo(aCount);
+        } else {
+          var directionSensitive = true;
+          switch (channelSort) {
+            case _ChannelSort.recommended:
+              comparison = 0;
+            case _ChannelSort.name:
+              comparison = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              directionSensitive = false;
+              if (!sortAscending) comparison = -comparison;
+            case _ChannelSort.listeners:
+              if (a.listeners < 0 || b.listeners < 0) {
+                comparison = a.listeners < 0 ? (b.listeners < 0 ? 0 : 1) : -1;
+                directionSensitive = false;
+              } else {
+                comparison = a.listeners.compareTo(b.listeners);
+              }
+            case _ChannelSort.duration:
+              final aStart = a.broadcastStartedAt;
+              final bStart = b.broadcastStartedAt;
+              if (aStart == null || bStart == null) {
+                comparison = aStart == null ? (bStart == null ? 0 : 1) : -1;
+                directionSensitive = false;
+              } else {
+                comparison = now
+                    .difference(aStart)
+                    .compareTo(now.difference(bStart));
+              }
+          }
+          if (!sortAscending && directionSensitive) comparison = -comparison;
+        }
+        return comparison != 0
+            ? comparison
             : originalOrder[a]!.compareTo(originalOrder[b]!);
       });
     }
@@ -290,6 +335,42 @@ class _ChannelScreenState extends State<ChannelScreen>
               onChanged: (v) => setState(() => search = v),
             ),
           ),
+          if (tab != 2)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+              child: Row(
+                children: [
+                  const Text('並び替え'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButton<_ChannelSort>(
+                      value: channelSort,
+                      isExpanded: true,
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        for (final sort in _ChannelSort.values)
+                          DropdownMenuItem(
+                            value: sort,
+                            child: Text(sort.label),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setState(() => channelSort = value);
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: sortAscending ? '昇順' : '降順',
+                    icon: Icon(
+                      sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                    ),
+                    onPressed: channelSort == _ChannelSort.recommended
+                        ? null
+                        : () => setState(() => sortAscending = !sortAscending),
+                  ),
+                ],
+              ),
+            ),
           if (loading) const LinearProgressIndicator(),
           if (widget.settings.loadError != null)
             Padding(
