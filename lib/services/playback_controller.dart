@@ -156,7 +156,7 @@ class PlaybackController extends ChangeNotifier {
     opening = true;
     final port = settings.port;
     String portFailure() =>
-        'ポート $port の開放を確認できません。${snapshot.portCheckError.isEmpty ? 'Wi-FiとiPhoneへのポート転送設定を確認してください' : snapshot.portCheckError}';
+        'ポート $port の開放を確認できません。${snapshot.portCheckError.isEmpty ? 'Wi-Fi接続と視聴端末へのポート転送設定を確認してください' : snapshot.portCheckError}';
     message = '接続中…';
     changed();
     try {
