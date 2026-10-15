@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/foundation.dart';
@@ -82,6 +84,7 @@ class ChannelScreen extends StatefulWidget {
 
 class _ChannelScreenState extends State<ChannelScreen>
     with WidgetsBindingObserver {
+  bool? _isTablet;
   late final directory =
       widget.directory ??
       ChannelDirectory(
@@ -149,6 +152,24 @@ class _ChannelScreenState extends State<ChannelScreen>
     widget.settings.addListener(changed);
     searchFocus.addListener(changed);
     refresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    if (_isTablet != isTablet) {
+      _isTablet = isTablet;
+      unawaited(
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          if (isTablet) ...[
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ],
+        ]),
+      );
+    }
   }
 
   @override

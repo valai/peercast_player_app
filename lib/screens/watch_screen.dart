@@ -82,6 +82,7 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   bool fullscreen = false;
   Size _boardSize = const Size(400, 500);
   bool _lastPip = false;
+  bool _isTablet = false;
   bool? _configuredPlaying;
   double? _configuredRatio;
   bool get inPip => playback.background.inPip;
@@ -150,12 +151,22 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     unawaited(
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
-        if (!widget.minimized) ...[
+        if (!widget.minimized || _isTablet) ...[
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ],
       ]),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    if (_isTablet != isTablet) {
+      _isTablet = isTablet;
+      _updateOrientations();
+    }
   }
 
   @override
@@ -240,7 +251,13 @@ class WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     playback.removeListener(_playbackChanged);
     playback.background.removeListener(_backgroundChanged);
     unawaited(
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        if (_isTablet) ...[
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+      ]),
     );
     if (fullscreen) unawaited(setPlaybackFullscreen(false));
     playback.dispose();
