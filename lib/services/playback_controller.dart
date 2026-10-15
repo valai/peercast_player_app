@@ -122,12 +122,26 @@ class PlaybackController extends ChangeNotifier {
   bool _windowsReopening = false;
   String? _windowsSessionId;
   bool muted = false;
+  double volume = 1;
 
   Future<void> toggleMute() async {
     muted = !muted;
+    if (!muted && volume == 0) volume = 1;
     changed();
-    await androidVideo?.setVolume(muted ? 0 : 1);
-    await player?.setVolume(muted ? 0 : 100);
+    await _applyVolume();
+  }
+
+  Future<void> setVolume(double value) async {
+    volume = value.clamp(0, 1).toDouble();
+    muted = volume == 0;
+    changed();
+    await _applyVolume();
+  }
+
+  Future<void> _applyVolume() async {
+    final effectiveVolume = muted ? 0.0 : volume;
+    await androidVideo?.setVolume(effectiveVolume);
+    await player?.setVolume(effectiveVolume * 100);
   }
 
   bool active = false, opening = false;
@@ -313,7 +327,7 @@ class PlaybackController extends ChangeNotifier {
       );
     }
     if (!_isCurrent(ticket)) return;
-    await player!.setVolume(muted ? 0 : 100);
+    await player!.setVolume(muted ? 0 : volume * 100);
     final startup = PlaybackStartup(player!.stream.position);
     _startup = startup;
     try {
@@ -572,7 +586,7 @@ class PlaybackController extends ChangeNotifier {
     });
     await output.initialize().timeout(const Duration(seconds: 30));
     if (!_isCurrent(ticket)) return;
-    await output.setVolume(muted ? 0 : 1);
+    await output.setVolume(muted ? 0 : volume);
     if (!_isCurrent(ticket)) return;
     await output.play();
     if (!_isCurrent(ticket)) return;
