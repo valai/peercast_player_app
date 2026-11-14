@@ -74,7 +74,7 @@ void main() {
         client: MockClient((request) async {
           calls++;
           expect(request.method, 'POST');
-          expect(request.headers['user-agent'], 'Pekawan');
+          expect(request.headers['user-agent'], 'Pecaone');
           expect(request.headers['referer'], url);
           expect(request.bodyFields['MESSAGE'], '本文&追加');
           expect(request.url.path, switch (target.type) {
@@ -493,7 +493,7 @@ void main() {
     final client = BoardClient(
       client: MockClient((request) async {
         paths.add(request.url.path);
-        if (request.headers['user-agent'] != 'Pekawan') {
+        if (request.headers['user-agent'] != 'Pecaone') {
           return http.Response('Forbidden', 403);
         }
         return http.Response(
