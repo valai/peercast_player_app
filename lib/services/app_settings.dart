@@ -46,29 +46,60 @@ class AppSettings extends ChangeNotifier {
     if (raw != null) {
       try {
         final j = jsonDecode(raw) as Map<String, dynamic>;
-        settings.sources = (j['sources'] as List)
-            .map((v) => YellowPage.fromJson(v as Map<String, dynamic>))
-            .toList();
-        settings.favorites = (j['favorites'] as List).cast<String>().toSet();
-        settings.history = (j['history'] as List)
-            .map((v) => Channel.fromJson(v as Map<String, dynamic>))
-            .toList();
-        settings.history = settings.history.take(10).toList();
-        settings.historyEnabled = j['historyEnabled'] as bool? ?? true;
-        settings.threads = Map<String, String>.from(j['threads'] as Map);
-        settings.maxRelays = (j['maxRelays'] as int).clamp(1, 16);
-        settings.themeMode = ThemeMode.values.firstWhere(
-          (mode) => mode.name == j['themeMode'],
-          orElse: () => ThemeMode.system,
+        void restore(void Function() read) {
+          try {
+            read();
+          } catch (_) {
+            settings.loadError = '一部の保存データを読み込めませんでした。設定を確認してください。';
+          }
+        }
+
+        // A broken field must not prevent unrelated settings from loading.
+        settings.sources = [];
+        restore(
+          () => settings.sources = (j['sources'] as List)
+              .map((v) => YellowPage.fromJson(v as Map<String, dynamic>))
+              .toList(),
         );
-        settings.port = (j['port'] as int).clamp(1024, 65535);
-        settings.playbackSource = PlaybackSource.values.firstWhere(
-          (value) => value.name == j['playbackSource'],
-          orElse: () => PlaybackSource.direct,
+        restore(
+          () => settings.favorites = (j['favorites'] as List)
+              .cast<String>()
+              .toSet(),
         );
-        settings.windowsQuality = WindowsQuality.values.firstWhere(
-          (value) => value.name == j['windowsQuality'],
-          orElse: () => WindowsQuality.auto,
+        restore(
+          () => settings.history = (j['history'] as List)
+              .map((v) => Channel.fromJson(v as Map<String, dynamic>))
+              .take(10)
+              .toList(),
+        );
+        restore(
+          () => settings.historyEnabled = j['historyEnabled'] as bool? ?? true,
+        );
+        restore(
+          () =>
+              settings.threads = Map<String, String>.from(j['threads'] as Map),
+        );
+        restore(
+          () => settings.maxRelays = (j['maxRelays'] as int).clamp(1, 16),
+        );
+        restore(
+          () => settings.themeMode = ThemeMode.values.firstWhere(
+            (mode) => mode.name == j['themeMode'],
+            orElse: () => ThemeMode.system,
+          ),
+        );
+        restore(() => settings.port = (j['port'] as int).clamp(1024, 65535));
+        restore(
+          () => settings.playbackSource = PlaybackSource.values.firstWhere(
+            (value) => value.name == j['playbackSource'],
+            orElse: () => PlaybackSource.direct,
+          ),
+        );
+        restore(
+          () => settings.windowsQuality = WindowsQuality.values.firstWhere(
+            (value) => value.name == j['windowsQuality'],
+            orElse: () => WindowsQuality.auto,
+          ),
         );
       } catch (_) {
         settings.sources = [];
