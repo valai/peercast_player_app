@@ -102,7 +102,7 @@ class _PortCheckScreenState extends State<PortCheckScreen>
         ListTile(
           title: Text(listener.message),
           subtitle: Text(
-            'SPの使用ポートを ${widget.port} に変更し、確認結果の「Use Port」と「Port check」を確認してください。画面を閉じると待受を停止します。',
+            '待受を開始し、SPの使用ポートを ${widget.port} に変更して「Use Port」と「Port check」を確認してください。SPの設定は同じ回線のPCにも影響する場合があります。画面を閉じると待受を停止します。',
           ),
         ),
         Wrap(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -42,11 +43,13 @@ void main() {
         expect(request.url, Uri.parse('http://bayonet.ddo.jp/sp/'));
         expect(request.headers['Cache-Control'], 'no-cache');
         sawListener = engine.running;
-        return http.Response('', 200);
+        return http.Response('Use Port : 7144<br />', 200);
       }),
     );
 
-    expect(await refresher.refresh(port: 17145, relays: 2), isTrue);
+    final status = await refresher.refresh(port: 17145, relays: 2);
+    expect(status.success, isTrue);
+    expect(status.port, 7144);
     expect(sawListener, isTrue);
     expect(engine.starts, 1);
     expect(engine.stops, 1);
@@ -63,9 +66,36 @@ void main() {
       clientFactory: () => MockClient((_) async => http.Response('', 200)),
     );
 
-    expect(await refresher.refresh(port: 17145, relays: 2), isFalse);
+    expect((await refresher.refresh(port: 17145, relays: 2)).success, isFalse);
     expect(engine.starts, 0);
     expect(engine.stops, 0);
+    refresher.dispose();
+  });
+
+  test('再生開始前に進行中のSP確認と待受停止を待つ', () async {
+    final engine = Listener();
+    final response = Completer<http.Response>();
+    final requested = Completer<void>();
+    final refresher = SpPortStatusRefresher(
+      engine: engine,
+      checkConnectivity: () async => [ConnectivityResult.wifi],
+      directory: () async => Directory('.'),
+      clientFactory: () => MockClient((_) {
+        requested.complete();
+        return response.future;
+      }),
+    );
+    final refresh = refresher.refresh(port: 17145, relays: 2);
+    await requested.future;
+    var completed = false;
+    final waiting = refresher.waitForCompletion().then((_) => completed = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse);
+    response.complete(http.Response('Use Port : 17145<br />', 200));
+    expect((await refresh).port, 17145);
+    await waiting;
+    expect(completed, isTrue);
+    expect(engine.running, isFalse);
     refresher.dispose();
   });
 }

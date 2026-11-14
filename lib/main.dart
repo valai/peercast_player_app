@@ -11,6 +11,7 @@ import 'services/app_settings.dart';
 import 'services/channel_directory.dart';
 import 'services/screenshot_channel_directory.dart';
 import 'services/sp_port_status_refresher.dart';
+import 'screens/port_check_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/keyboard_dismiss.dart';
 import 'screens/watch_screen.dart';
@@ -101,11 +102,18 @@ class _ChannelScreenState extends State<ChannelScreen>
         useWindowsForSp: () =>
             widget.settings.playbackSource == PlaybackSource.windows,
         refreshSpPortStatus: () async {
-          if (widget.settings.playbackSource == PlaybackSource.windows) return;
-          await spPortStatusRefresher!.refresh(
+          if (widget.settings.playbackSource == PlaybackSource.windows ||
+              watching != null ||
+              switching) {
+            return;
+          }
+          final status = await spPortStatusRefresher!.refresh(
             port: widget.settings.port,
             relays: widget.settings.maxRelays,
           );
+          if (mounted) {
+            setState(() => spReportedPort = status.port);
+          }
         },
       );
   late final SpPortStatusRefresher? spPortStatusRefresher =
@@ -113,6 +121,7 @@ class _ChannelScreenState extends State<ChannelScreen>
   List<Channel> channels = [];
   Set<String> orderingFavorites = {};
   Map<String, String> errors = {};
+  int? spReportedPort;
   bool loading = false;
   final searchFocus = FocusNode();
   String search = '';
@@ -132,6 +141,9 @@ class _ChannelScreenState extends State<ChannelScreen>
       return;
     }
     switching = true;
+    // A preflight owns the same native core as playback. Let it finish before
+    // starting a player, and prevent new preflights while switching.
+    await spPortStatusRefresher?.waitForCompletion();
     await watchKey.currentState?.stop();
     if (!mounted) return;
     setState(() {
@@ -376,6 +388,37 @@ class _ChannelScreenState extends State<ChannelScreen>
             Padding(
               padding: const EdgeInsets.all(8),
               child: Text(widget.settings.loadError!),
+            ),
+          if (widget.settings.playbackSource == PlaybackSource.direct &&
+              spReportedPort != null &&
+              spReportedPort != widget.settings.port)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SPの使用ポートは $spReportedPort、アプリの使用ポートは ${widget.settings.port} です。SPのポートを変更して確認してください。',
+                  ),
+                  TextButton(
+                    onPressed: watching != null || switching || loading
+                        ? null
+                        : () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => PortCheckScreen(
+                                  port: widget.settings.port,
+                                  relays: widget.settings.maxRelays,
+                                ),
+                              ),
+                            );
+                            if (mounted) await refresh();
+                          },
+                    child: const Text('SPのポートを確認・変更'),
+                  ),
+                ],
+              ),
             ),
           if (errors.isNotEmpty)
             Padding(
