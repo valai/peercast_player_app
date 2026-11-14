@@ -10,7 +10,7 @@ import 'board_resolver.dart';
 final _unescape = HtmlUnescape();
 final _breakTag = RegExp(r'<br\s*/?>', caseSensitive: false);
 final _htmlTag = RegExp(r'<[^>]*>');
-const _boardHeaders = {'User-Agent': 'Pekawan'};
+const _boardHeaders = {'User-Agent': 'Pecaone'};
 
 String boardText(String value) => _unescape
     .convert(value.replaceAll(_breakTag, '\n').replaceAll(_htmlTag, ''))
