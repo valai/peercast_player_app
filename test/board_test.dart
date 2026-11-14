@@ -74,6 +74,7 @@ void main() {
         client: MockClient((request) async {
           calls++;
           expect(request.method, 'POST');
+          expect(request.headers['user-agent'], 'Pekawan');
           expect(request.headers['referer'], url);
           expect(request.bodyFields['MESSAGE'], '本文&追加');
           expect(request.url.path, switch (target.type) {
@@ -486,6 +487,28 @@ void main() {
     );
     await expectLater(client.fetch(target), throwsException);
     client.dispose();
+  });
+  test('掲示板のレスと一覧にアプリを識別する User-Agent を送信する', () async {
+    final paths = <String>[];
+    final client = BoardClient(
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.headers['user-agent'] != 'Pekawan') {
+          return http.Response('Forbidden', 403);
+        }
+        return http.Response(
+          request.url.path.endsWith('subject.txt')
+              ? '123.dat<>題名 (1)'
+              : '名前<>sage<>日時<>本文<>題名',
+          200,
+          headers: {'content-type': 'text/plain; charset=utf-8'},
+        );
+      }),
+    );
+    addTearDown(client.dispose);
+    expect((await client.fetch(target)).posts.single.body, '本文');
+    expect((await client.fetchThreads(target)).single.title, '題名');
+    expect(paths, ['/test/dat/123.dat', '/test/subject.txt']);
   });
   testWidgets('自動更新・OFF・失敗時のレスと下書き保持・終了時のタイマー停止', (tester) async {
     final client = FakeBoardClient();

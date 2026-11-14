@@ -10,6 +10,7 @@ import 'board_resolver.dart';
 final _unescape = HtmlUnescape();
 final _breakTag = RegExp(r'<br\s*/?>', caseSensitive: false);
 final _htmlTag = RegExp(r'<[^>]*>');
+const _boardHeaders = {'User-Agent': 'Pekawan'};
 
 String boardText(String value) => _unescape
     .convert(value.replaceAll(_breakTag, '\n').replaceAll(_htmlTag, ''))
@@ -123,7 +124,7 @@ class BoardClient {
     final home = target.boardUri;
     final path = '${home.path.replaceFirst(RegExp(r'/+$'), '')}/subject.txt';
     final response = await client
-        .get(target.endpoint(path))
+        .get(target.endpoint(path), headers: _boardHeaders)
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -188,7 +189,7 @@ class BoardClient {
         ? '/bbs/rawmode.cgi/${p[2]}/${p[3]}/${p[4]}/'
         : '/${p[2]}/dat/${p[3]}.dat';
     final response = await client
-        .get(target.endpoint(target.pathPrefix + path))
+        .get(target.endpoint(target.pathPrefix + path), headers: _boardHeaders)
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -259,6 +260,7 @@ class BoardClient {
           )
           ..followRedirects = false
           ..headers.addAll({
+            ..._boardHeaders,
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': target.uri.toString(),
           })
