@@ -138,6 +138,51 @@ void main() {
     expect(restored.port, 17144);
     expect(restored.maxRelays, 2);
   });
+  test('YP設定が不正でもお気に入りを復元し、その後の保存で保持する', () async {
+    final settings = await AppSettings.load();
+    final channel = Channel.parse(row(), YellowPage.defaults.first).single;
+    await settings.toggleFavorite(channel);
+    final prefs = await SharedPreferences.getInstance();
+    final data = jsonDecode(
+      prefs.getString(AppSettings.storageKey)!,
+    ) as Map<String, dynamic>;
+    data['sources'] = [
+      <String, dynamic>{'id': 'broken'},
+    ];
+    await prefs.setString(AppSettings.storageKey, jsonEncode(data));
+
+    final restored = await AppSettings.load();
+    expect(restored.loadError, isNotNull);
+    expect(restored.sources, isEmpty);
+    expect(restored.favorites, contains(channel.key));
+    restored.themeMode = ThemeMode.dark;
+    await restored.save();
+
+    final restarted = await AppSettings.load();
+    expect(restarted.favorites, contains(channel.key));
+    expect(restarted.themeMode, ThemeMode.dark);
+  });
+  test('履歴などの不正な設定があっても他の設定を復元する', () async {
+    final settings = await AppSettings.load();
+    final channel = Channel.parse(row(), YellowPage.defaults.first).single;
+    await settings.toggleFavorite(channel);
+    final prefs = await SharedPreferences.getInstance();
+    final data = jsonDecode(
+      prefs.getString(AppSettings.storageKey)!,
+    ) as Map<String, dynamic>;
+    data['history'] = [
+      <String, dynamic>{'id': 'broken'},
+    ];
+    data['threads'] = 'broken';
+    data['port'] = 17144;
+    await prefs.setString(AppSettings.storageKey, jsonEncode(data));
+
+    final restored = await AppSettings.load();
+    expect(restored.loadError, isNotNull);
+    expect(restored.favorites, contains(channel.key));
+    expect(restored.history, isEmpty);
+    expect(restored.port, 17144);
+  });
   test('履歴は直近10件を保存し再閲覧したチャンネルを先頭に移す', () async {
     final s = await AppSettings.load();
     final channels = List.generate(
